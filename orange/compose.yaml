@@ -27,7 +27,6 @@ services:
       - osrm-backend-car
       - osrm-backend-bicycle
       - osrm-backend-foot
-      - osrm-backend-custom
     networks:
       - osrm-network
 
@@ -76,39 +75,6 @@ services:
     memswap_limit: 16G
     networks:
       - osrm-network
-
-  osrm-backend-custom:
-    image: ghcr.io/project-osrm/osrm-backend:v6.0.0  # NB: v6 data format is NOT compatible with the v5.27.1 backends above
-    container_name: osrm-backend-custom
-    restart: unless-stopped
-    command: osrm-routed -p 5004 --mmap --threads 4 --algorithm mld --max-matching-size 10000 "/data/custom_network/custom_network.osrm"
-    volumes:
-      - osrm-data:/data
-    ports:
-      - "5004:5004"
-    mem_limit: 8G
-    memswap_limit: 16G
-    networks:
-      - osrm-network
-
-  # --- DEFERRED: custom_nowrongways profile ---
-  # The original nginx.conf routed /custom_nowrongways to a backend on :5005 that
-  # was never defined here, so nginx failed to resolve the upstream at startup.
-  # Re-add the backend below (and uncomment the matching upstream/location in
-  # nginx.conf) when its data exists.
-  # osrm-backend-custom-nowrongways:
-  #   image: ghcr.io/project-osrm/osrm-backend:v6.0.0
-  #   container_name: osrm-backend-custom-nowrongways
-  #   restart: unless-stopped
-  #   command: osrm-routed -p 5005 --mmap --threads 4 --algorithm mld --max-matching-size 10000 "/data/custom_network_nowrongways/custom_network.osrm"
-  #   volumes:
-  #     - osrm-data:/data
-  #   ports:
-  #     - "5005:5005"
-  #   mem_limit: 8G
-  #   memswap_limit: 16G
-  #   networks:
-  #     - osrm-network
 
 networks:
   osrm-network:
