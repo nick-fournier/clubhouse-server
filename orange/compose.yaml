@@ -52,7 +52,7 @@ services:
     image: ghcr.io/project-osrm/osrm-backend:v5.27.1
     container_name: osrm-backend-bicycle
     restart: unless-stopped
-    command: osrm-routed -p 5002 --mmap --threads 4 --algorithm mld --max-matching-size 10000 "/data/bicycle/us-west-latest.osrm"
+    command: osrm-routed -p 5002 --mmap --threads 4 --algorithm mld --max-matching-size 10000 "/data/bicycle/cropped_network.osrm"
     volumes:
       - osrm-data:/data
     ports:
