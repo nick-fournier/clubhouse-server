@@ -1,0 +1,116 @@
+name: osrm-server
+
+# OSRM routing worker. Single host (orange) for now; if load demands, this same
+# stack is duplicated onto thinkbox and fronted by HAProxy (see repo README).
+#
+# Map data lives in ./data (gitignored, multi-GB). It is reproducible from
+# prep-data.sh + the source .pbf — see that script and orange/README.md.
+
+volumes:
+  osrm-data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./data
+      o: bind
+
+services:
+  osrm-nginx:
+    image: nginx:1.27.3-perl
+    container_name: osrm-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "5000:5000"
+    depends_on:
+      - osrm-backend-car
+      - osrm-backend-bicycle
+      - osrm-backend-foot
+      - osrm-backend-custom
+    networks:
+      - osrm-network
+
+  # Each profile is a separate osrm-routed process on its own port.
+  # mem_limit is a ceiling, not a reservation: --mmap memory-maps the graph and
+  # the OS pages it from disk, so the summed limits can exceed orange's 16G RAM
+  # without all backends being resident at once.
+  osrm-backend-car:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    container_name: osrm-backend-car
+    restart: unless-stopped
+    command: osrm-routed -p 5001 --mmap --threads 4 --algorithm mld --max-matching-size 10000 "/data/car/cropped_network.osrm"
+    volumes:
+      - osrm-data:/data
+    ports:
+      - "5001:5001"
+    mem_limit: 8G
+    memswap_limit: 16G
+    networks:
+      - osrm-network
+
+  osrm-backend-bicycle:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    container_name: osrm-backend-bicycle
+    restart: unless-stopped
+    command: osrm-routed -p 5002 --mmap --threads 4 --algorithm mld --max-matching-size 10000 "/data/bicycle.uswest_wrongways/us-west-latest.osrm"
+    volumes:
+      - osrm-data:/data
+    ports:
+      - "5002:5002"
+    mem_limit: 8G
+    memswap_limit: 16G
+    networks:
+      - osrm-network
+
+  osrm-backend-foot:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    container_name: osrm-backend-foot
+    restart: unless-stopped
+    command: osrm-routed -p 5003 --mmap --threads 4 --algorithm mld --max-matching-size 10000 "/data/foot/cropped_network.osrm"
+    volumes:
+      - osrm-data:/data
+    ports:
+      - "5003:5003"
+    mem_limit: 8G
+    memswap_limit: 16G
+    networks:
+      - osrm-network
+
+  osrm-backend-custom:
+    image: ghcr.io/project-osrm/osrm-backend:v6.0.0  # NB: v6 data format is NOT compatible with the v5.27.1 backends above
+    container_name: osrm-backend-custom
+    restart: unless-stopped
+    command: osrm-routed -p 5004 --mmap --threads 4 --algorithm mld --max-matching-size 10000 "/data/custom_network/custom_network.osrm"
+    volumes:
+      - osrm-data:/data
+    ports:
+      - "5004:5004"
+    mem_limit: 8G
+    memswap_limit: 16G
+    networks:
+      - osrm-network
+
+  # --- DEFERRED: custom_nowrongways profile ---
+  # The original nginx.conf routed /custom_nowrongways to a backend on :5005 that
+  # was never defined here, so nginx failed to resolve the upstream at startup.
+  # Re-add the backend below (and uncomment the matching upstream/location in
+  # nginx.conf) when its data exists.
+  # osrm-backend-custom-nowrongways:
+  #   image: ghcr.io/project-osrm/osrm-backend:v6.0.0
+  #   container_name: osrm-backend-custom-nowrongways
+  #   restart: unless-stopped
+  #   command: osrm-routed -p 5005 --mmap --threads 4 --algorithm mld --max-matching-size 10000 "/data/custom_network_nowrongways/custom_network.osrm"
+  #   volumes:
+  #     - osrm-data:/data
+  #   ports:
+  #     - "5005:5005"
+  #   mem_limit: 8G
+  #   memswap_limit: 16G
+  #   networks:
+  #     - osrm-network
+
+networks:
+  osrm-network:
+    driver: bridge
+    name: osrm-network

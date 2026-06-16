@@ -1,0 +1,11 @@
+ingress:
+  # Hobby site — served locally by the gateway nginx.
+  - hostname: "launchpad.nicholasfournier.com"
+    service: http://nginx:80
+
+  # OSRM routing — forwarded to the orange worker over Tailscale (MagicDNS).
+  # When OSRM is scaled to a second host, repoint this at the HAProxy endpoint.
+  - hostname: "router.nicholasfournier.com"
+    service: http://orange:5000
+
+  - service: http_status:404

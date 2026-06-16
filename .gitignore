@@ -1,2 +1,7 @@
+# Secrets — never commit real env files (commit example.env instead)
 .env
+**/.env
 *.dump
+
+# OSRM compiled graph data (multi-GB, reproducible via orange/prep-data.sh)
+**/data/

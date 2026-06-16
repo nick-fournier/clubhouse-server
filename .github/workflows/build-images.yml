@@ -31,8 +31,8 @@ jobs:
 
     - name: Build and push the Docker image
       run: |
-        docker buildx build ./postgres \
-          --file ./postgres/Dockerfile \
+        docker buildx build ./cube \
+          --file ./cube/Dockerfile \
           --tag $IMAGE_NAME:latest \
           --platform $PLATFORMS \
           --push

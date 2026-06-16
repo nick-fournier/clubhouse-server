@@ -1,8 +1,0 @@
-ingress:
-  - hostname: "launchpad.nicholasfournier.com"
-    service: http://nginx:80
-
-  - hostname: "router.nicholasfournier.com"
-    service: http://osrm-nginx:5000
-
-  - service: http_status:404

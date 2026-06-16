@@ -1,6 +1,25 @@
-name: orange-server
+name: razz-gateway
+
+# Control plane on the Pi4: the single management dashboard, the public front
+# door (Cloudflare tunnel), and the light Django hobby site. No bandwidth-heavy
+# or untrusted-data workloads live here.
 
 services:
+  # Single-pane dashboard. Add orange (and later thinkbox/cube) as Agent
+  # endpoints over Tailscale: Environments -> Add -> Agent -> orange:9001.
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9443:9443"   # HTTPS UI
+      - "8000:8000"   # optional: Edge agent tunnel (unused with standard agents)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - razz-network
+
   web:
     image: nichfournier/launchpad-web:latest
     container_name: web
@@ -15,7 +34,7 @@ services:
       - static_volume:/app/staticfiles
       - media_volume:/app/mediafiles
     networks:
-      - orange-network
+      - razz-network
 
   nginx:
     image: nginx:1.27.3-perl
@@ -30,51 +49,45 @@ services:
     depends_on:
       - web
     networks:
-      - orange-network
+      - razz-network
 
   tunnel:
     image: cloudflare/cloudflared:2024.12.2
     container_name: tunnel
+    restart: unless-stopped
     command: tunnel --no-autoupdate --config /app/config.yml run
     volumes:
       - ./tunnel.yml:/app/config.yml
     environment:
       - TUNNEL_ID=${TUNNEL_ID}
       - TUNNEL_TOKEN=${TUNNEL_TOKEN}
-      - TZ=America/Los_Angeles
+      - TZ=${TZ}
     depends_on:
       - web
-    restart: unless-stopped
-    hostname: launchpad.nicholasfournier.com
     networks:
-      - orange-network
-      - osrm-network
+      - razz-network
 
   glances:
     image: nicolargo/glances:latest-full
     container_name: glances
     restart: unless-stopped
     ports:
-      # - "61208-61209:61208-61209"
       - "61208:61208"
     environment:
       - TZ=${TZ}
-      - GLANCES_OPT=-w  # Enable the web interface
+      - GLANCES_OPT=-w   # web interface
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /run/user/1000/podman/podman.sock:/run/user/1000/podman/podman.sock:ro
     pid: host
     networks:
-      - orange-network
+      - razz-network
 
 volumes:
   static_volume:
   media_volume:
-  db:
+  portainer_data:
 
 networks:
-  orange-network:
+  razz-network:
     driver: bridge
-    name: orange-network
-  osrm-network:
-    external: true
+    name: razz-network
