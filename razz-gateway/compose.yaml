@@ -67,21 +67,6 @@ services:
     networks:
       - razz-network
 
-  glances:
-    image: nicolargo/glances:latest-full
-    container_name: glances
-    restart: unless-stopped
-    ports:
-      - "61208:61208"
-    environment:
-      - TZ=${TZ}
-      - GLANCES_OPT=-w   # web interface
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    pid: host
-    networks:
-      - razz-network
-
 volumes:
   static_volume:
   media_volume:
