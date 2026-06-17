@@ -47,6 +47,7 @@ import subprocess
 import sys
 import time
 import zipfile
+import zoneinfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -397,6 +398,33 @@ def _normalize_table(raw: bytes) -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
+_VALID_TZ: set[str] | None = None
+
+
+def _valid_tz(name: str) -> bool:
+    """True if *name* is a real IANA timezone (not empty / a placeholder).
+
+    Feeds sometimes ship literal junk like ``<PLEASE ENTER THE TIME ZONE>`` in
+    agency_timezone; MOTIS rejects anything not in its tz database. We validate
+    against ``zoneinfo`` (backed by the pinned ``tzdata`` package).
+    """
+    global _VALID_TZ
+    if not name:
+        return False
+    if _VALID_TZ is None:
+        try:
+            _VALID_TZ = zoneinfo.available_timezones()
+        except Exception:
+            _VALID_TZ = set()
+    if _VALID_TZ:
+        return name in _VALID_TZ
+    try:  # fallback if the zone name set couldn't be enumerated
+        zoneinfo.ZoneInfo(name)
+        return True
+    except Exception:
+        return False
+
+
 # Lazy singleton — TimezoneFinder loads boundary data once and is reused.
 _TZ_FINDER = None
 _TZ_FINDER_TRIED = False
@@ -456,10 +484,11 @@ def _representative_coord(
 
 
 def _inject_timezone(agency_text: str, tz: str) -> bytes:
-    """Return agency.txt bytes with ``agency_timezone`` filled in with *tz*.
+    """Return agency.txt bytes with ``agency_timezone`` set to *tz* where needed.
 
-    Adds the column if absent; fills only empty values so any present zones are
-    preserved. *agency_text* is the already-normalized table text.
+    Adds the column if absent; replaces empty OR invalid values (placeholders,
+    junk) while preserving any already-valid zones. *agency_text* is the
+    already-normalized table text.
     """
     reader = csv.DictReader(io.StringIO(agency_text))
     fields = list(reader.fieldnames or [])
@@ -467,7 +496,7 @@ def _inject_timezone(agency_text: str, tz: str) -> bytes:
         fields.append("agency_timezone")
     rows = []
     for r in reader:
-        if not (r.get("agency_timezone") or "").strip():
+        if not _valid_tz((r.get("agency_timezone") or "").strip()):
             r["agency_timezone"] = tz
         rows.append(r)
     buf = io.StringIO()
@@ -530,22 +559,32 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
                 reader = csv.DictReader(io.StringIO(agency_text))
                 fields = reader.fieldnames or []
                 tz_values = [(r.get("agency_timezone") or "").strip() for r in reader]
+                valid_tz = [v for v in tz_values if _valid_tz(v)]
                 agency_override: bytes | None = None
-                if "agency_timezone" not in fields or not any(tz_values):
-                    # Infer the zone from a representative stop coordinate and
-                    # inject it, rather than dropping the feed.
+                # Fix if the column is absent, there are no rows, or ANY row has
+                # a missing/invalid zone (e.g. "<PLEASE ENTER THE TIME ZONE>").
+                if (
+                    "agency_timezone" not in fields
+                    or not tz_values
+                    or any(not _valid_tz(v) for v in tz_values)
+                ):
+                    # Prefer inference from a representative stop coordinate;
+                    # fall back to a valid zone from a sibling agency row.
                     coord = _representative_coord(zin, file_map)
-                    tz = _lookup_timezone(*coord) if coord else None
+                    tz = (_lookup_timezone(*coord) if coord else None) or (
+                        valid_tz[0] if valid_tz else None
+                    )
                     if not tz:
                         logger.warning(
-                            "Dropping %s: no agency_timezone and could not infer one",
+                            "Dropping %s: agency_timezone missing/invalid and "
+                            "could not infer one",
                             gtfs_path.name,
                         )
                         dropped += 1
                         continue
                     agency_override = _inject_timezone(agency_text, tz)
                     inferred += 1
-                    logger.debug("Inferred agency_timezone=%s for %s", tz, gtfs_path.name)
+                    logger.debug("Set agency_timezone=%s for %s", tz, gtfs_path.name)
 
                 empty_tables: set[str] = set()
                 for basename, zip_path in file_map.items():

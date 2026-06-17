@@ -7,6 +7,9 @@ requires-python = ">=3.10"
 # agency_timezone from a representative stop coordinate when GTFS omits it.
 dependencies = [
     "timezonefinder>=6.5",
+    # Backs zoneinfo so agency_timezone validation works regardless of host
+    # tz data (rejects placeholders like "<PLEASE ENTER THE TIME ZONE>").
+    "tzdata>=2024.1",
 ]
 
 [tool.uv]
