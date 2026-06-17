@@ -424,24 +424,16 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
                     dropped += 1
                     continue
 
-                # MOTIS requires agency_timezone
-                agency_data = zin.read(file_map["agency.txt"]).decode("utf-8-sig", errors="replace")
-                agency_lines = [l for l in agency_data.strip().split("\n") if l.strip()]
-                tz_missing = True
-                if len(agency_lines) >= 2:
-                    hdr = [c.strip() for c in agency_lines[0].split(",")]
-                    if "agency_timezone" in hdr:
-                        tz_idx = hdr.index("agency_timezone")
-                        tz_missing = False
-                        for row_line in agency_lines[1:]:
-                            cols = row_line.split(",")
-                            tz_val = cols[tz_idx].strip() if tz_idx < len(cols) else ""
-                            if not tz_val:
-                                tz_missing = True
-                                break
-                if tz_missing:
+                # MOTIS requires agency_timezone. Parse the (normalized) agency
+                # table with csv so quoted fields / embedded commas don't throw
+                # off the column count the way a naive split would.
+                agency_text = _normalize_table(zin.read(file_map["agency.txt"])).decode("utf-8")
+                reader = csv.DictReader(io.StringIO(agency_text))
+                fields = reader.fieldnames or []
+                tz_values = [(r.get("agency_timezone") or "").strip() for r in reader]
+                if "agency_timezone" not in fields or not any(tz_values):
                     logger.warning(
-                        "Dropping %s: missing agency_timezone (MOTIS requires it)",
+                        "Dropping %s: no agency_timezone (MOTIS requires it)",
                         gtfs_path.name,
                     )
                     dropped += 1
