@@ -26,11 +26,13 @@ Multi-GB and **not** in git (root `.gitignore` covers `**/data/`). Reproducible:
 
 ```bash
 cp example.env .env             # fill in MOBILITY_DB_REFRESH_TOKEN
-pip install timezonefinder      # optional, recommended (see below)
-python3 prep-data.py            # download US GTFS + OSM, sanitize, import
+uv run prep-data.py             # download US GTFS + OSM, sanitize, import
 ```
-Useful flags: `--download-only`, `--num-days N` (timetable window, default 30),
-`--date YYYY-MM-DD` (reference week), `--force-download`, `--force-rebuild`.
+The prep tool's deps are managed by [uv](https://docs.astral.sh/uv/)
+(`pyproject.toml` + `uv.lock`); `uv run` creates the project venv on first use,
+so nothing lands in base Python. Useful flags: `--download-only`,
+`--num-days N` (timetable window, default 30), `--date YYYY-MM-DD` (reference
+week), `--force-download`, `--force-rebuild`.
 
 `prep-data.py` discovers every US GTFS feed from the
 [Mobility Database](https://mobilitydatabase.org) (free token), downloads the
@@ -45,10 +47,10 @@ delimiters, leaving a leading space that turns `America/Chicago` into
 `" America/Chicago"` and fails MOTIS's strict timezone lookup — the sanitizer
 trims every cell to prevent this.
 
-**`timezonefinder` (optional):** MOTIS requires `agency_timezone`, but some feeds
-omit it. With `timezonefinder` installed, prep infers the zone from a
-representative stop coordinate (correct for Arizona/Indiana edge cases) and
-injects it; without it, those feeds are dropped instead.
+**Timezone inference:** MOTIS requires `agency_timezone`, but some feeds omit it.
+Prep infers the zone from a representative stop coordinate (via `timezonefinder`,
+correct for Arizona/Indiana edge cases) and injects it, rather than dropping the
+feed. `timezonefinder` comes from the uv-managed env.
 
 If you have no token, drop GTFS `.zip` files into `./data/gtfs/` manually and
 prep will use those.

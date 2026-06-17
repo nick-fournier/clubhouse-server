@@ -5,3 +5,7 @@
 
 # OSRM compiled graph data (multi-GB, reproducible via orange/prep-data.sh)
 **/data/
+
+# Python / uv (thinkbox prep tooling) — env is reproducible from uv.lock
+.venv/
+__pycache__/

@@ -14,17 +14,18 @@ Routing-only profile (fits the 16GB box): street_routing ON, but geocoding /
 reverse_geocoding / tiles OFF — the address index is the big resident-memory
 hog and thinkbox is a pure routing backend (clients send coordinates).
 
-Stdlib only, except one optional dependency: `timezonefinder` (pip install
-timezonefinder). When a feed omits the GTFS-required agency_timezone, it's
-inferred from a representative stop coordinate and injected; without the package
-those feeds are dropped instead. No numpy/scipy/h3/py-motis. Python 3 + Docker.
+Stdlib only, except one dependency: `timezonefinder`, managed by uv (see
+pyproject.toml / uv.lock). Run via `uv run prep-data.py` so it executes in the
+project venv. When a feed omits the GTFS-required agency_timezone, it's inferred
+from a representative stop coordinate and injected; if timezonefinder is somehow
+unavailable those feeds are dropped instead. No numpy/scipy/h3/py-motis.
 
 Usage:
-  python3 prep-data.py                  # full pipeline (download + import)
-  python3 prep-data.py --download-only  # just fetch GTFS + OSM
-  python3 prep-data.py --num-days 30    # timetable window (default 30)
-  python3 prep-data.py --date 2026-06-16  # override reference date (a Monday)
-  python3 prep-data.py --force-rebuild  # re-import even if a dataset exists
+  uv run prep-data.py                   # full pipeline (download + import)
+  uv run prep-data.py --download-only   # just fetch GTFS + OSM
+  uv run prep-data.py --num-days 30     # timetable window (default 30)
+  uv run prep-data.py --date 2026-06-16 # override reference date (a Monday)
+  uv run prep-data.py --force-rebuild   # re-import even if a dataset exists
 
 Environment (thinkbox/.env, gitignored):
   MOBILITY_DB_REFRESH_TOKEN  — register free at https://mobilitydatabase.org

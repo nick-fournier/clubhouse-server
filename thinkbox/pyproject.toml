@@ -1,0 +1,14 @@
+[project]
+name = "thinkbox-motis-prep"
+version = "0.1.0"
+description = "Build the MOTIS dataset (all-US GTFS + OSM) for the thinkbox routing server."
+requires-python = ">=3.10"
+# prep-data.py is stdlib-only except timezonefinder, which infers a feed's
+# agency_timezone from a representative stop coordinate when GTFS omits it.
+dependencies = [
+    "timezonefinder>=6.5",
+]
+
+[tool.uv]
+# Not an installable package — just a managed environment for prep-data.py.
+package = false
