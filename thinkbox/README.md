@@ -50,10 +50,16 @@ delimiters, leaving a leading space that turns `America/Chicago` into
 `" America/Chicago"` and fails MOTIS's strict timezone lookup — the sanitizer
 trims every cell to prevent this.
 
-**Timezone inference:** MOTIS requires `agency_timezone`, but some feeds omit it.
-Prep infers the zone from a representative stop coordinate (via `timezonefinder`,
-correct for Arizona/Indiana edge cases) and injects it, rather than dropping the
-feed. `timezonefinder` comes from the uv-managed env.
+**Timezone handling:** MOTIS validates *both* GTFS timezone fields —
+`agency.txt:agency_timezone` (required) and `stops.txt:stop_timezone`
+(optional) — and aborts the whole import on the first value it can't find in
+its tz database. Prep handles both: it fills a missing/invalid `agency_timezone`
+by inferring the zone from a representative stop coordinate (via
+`timezonefinder`, correct for Arizona/Indiana edge cases), and blanks any
+invalid `stop_timezone` (an empty one simply inherits the agency zone). A fast
+pre-import scan then DROPS any straggler that still carries an unresolvable
+timezone, so one bad feed can never abort the ~30-min import. `timezonefinder`
+comes from the uv-managed env.
 
 If you have no token, drop GTFS `.zip` files into `./data/gtfs/` manually and
 prep will use those.

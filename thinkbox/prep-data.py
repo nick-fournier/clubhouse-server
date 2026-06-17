@@ -508,6 +508,38 @@ def _inject_timezone(agency_text: str, tz: str) -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
+def _scrub_stop_timezones(table_bytes: bytes) -> bytes:
+    """Blank any invalid ``stop_timezone`` in a normalized stops.txt.
+
+    GTFS has two timezone fields MOTIS validates: agency.txt:agency_timezone
+    (handled by _inject_timezone) and stops.txt:stop_timezone. stop_timezone is
+    optional, but MOTIS still looks up any *non-empty* value and aborts the whole
+    import on junk (e.g. ``<PLEASE ENTER THE TIME ZONE>``). Empty means "inherit
+    the agency zone" (always valid), so blanking an invalid value is the safe fix
+    — far better than dropping the whole feed for one bad stop row.
+    """
+    text = table_bytes.decode("utf-8")
+    reader = csv.DictReader(io.StringIO(text))
+    fields = list(reader.fieldnames or [])
+    if "stop_timezone" not in fields:
+        return table_bytes
+    rows = list(reader)
+    changed = False
+    for r in rows:
+        v = (r.get("stop_timezone") or "").strip()
+        if v and not _valid_tz(v):
+            r["stop_timezone"] = ""
+            changed = True
+    if not changed:
+        return table_bytes
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n", extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({k: (r.get(k) or "") for k in fields})
+    return buf.getvalue().encode("utf-8")
+
+
 def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
     """Sanitize GTFS zips for MOTIS compatibility.
 
@@ -615,6 +647,11 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
                             continue
                         if basename == "agency.txt" and agency_override is not None:
                             zout.writestr(basename, agency_override)
+                        elif basename == "stops.txt":
+                            zout.writestr(
+                                basename,
+                                _scrub_stop_timezones(_normalize_table(zin.read(zip_path))),
+                            )
                         else:
                             zout.writestr(basename, _normalize_table(zin.read(zip_path)))
                 result.append(out_path)
@@ -840,28 +877,45 @@ def run_import(data_dir: Path, tag: str = MOTIS_TAG) -> None:
 
 
 def _scan_invalid_timezones(feeds: list[Path]) -> list[tuple[str, str]]:
-    """Return (feed_name, bad_value) for staged feeds with a missing/invalid
-    agency_timezone. Expected empty after sanitization — a non-empty result
-    means a feed would fail `motis import`'s timetable VERIFY step.
+    """Return (feed_name, detail) for staged feeds MOTIS would reject on a
+    timezone field. Checks *both* GTFS timezone fields — agency.txt's
+    agency_timezone (required: empty or invalid is bad) and stops.txt's
+    stop_timezone (optional: only a non-empty invalid value is bad). Expected
+    empty after sanitization; a non-empty result means a feed would fail `motis
+    import`'s timetable VERIFY step.
     """
     problems: list[tuple[str, str]] = []
     for f in feeds:
         try:
             with zipfile.ZipFile(f) as z:
-                if "agency.txt" not in z.namelist():
+                names = z.namelist()
+                if "agency.txt" not in names:
                     problems.append((f.name, "<no agency.txt>"))
                     continue
-                reader = csv.DictReader(
+                areader = csv.DictReader(
                     io.StringIO(z.read("agency.txt").decode("utf-8-sig", errors="replace"))
                 )
-                if "agency_timezone" not in (reader.fieldnames or []):
+                if "agency_timezone" not in (areader.fieldnames or []):
                     problems.append((f.name, "<no agency_timezone column>"))
                     continue
-                for r in reader:
+                detail: str | None = None
+                for r in areader:
                     val = (r.get("agency_timezone") or "").strip()
                     if not _valid_tz(val):
-                        problems.append((f.name, val or "<empty>"))
+                        detail = f"agency_timezone={val or '<empty>'!r}"
                         break
+                if detail is None and "stops.txt" in names:
+                    sreader = csv.DictReader(
+                        io.StringIO(z.read("stops.txt").decode("utf-8-sig", errors="replace"))
+                    )
+                    if "stop_timezone" in (sreader.fieldnames or []):
+                        for r in sreader:
+                            val = (r.get("stop_timezone") or "").strip()
+                            if val and not _valid_tz(val):
+                                detail = f"stop_timezone={val!r}"
+                                break
+                if detail is not None:
+                    problems.append((f.name, detail))
         except Exception as e:
             problems.append((f.name, f"<read error: {e}>"))
     return problems
@@ -942,28 +996,34 @@ def main() -> None:
     osm_dest = DATA_DIR / OSM_FILENAME
     _link_or_copy(osm_path, osm_dest)
 
-    # ---- Phase 3: config + (optional) import ----
+    # ---- Phase 3: tz drop-gate + config + (optional) import ----
     print("\n" + "#" * 60 + "\n# Phase 3: write config + motis import\n" + "#" * 60)
-    write_motis_config(DATA_DIR, OSM_FILENAME, staged, first_day, args.num_days)
 
-    # Fast pre-import safety net: every staged feed should have a valid
-    # agency_timezone after sanitization. Catch any stragglers in seconds
-    # rather than 30 minutes into `motis import`.
+    # Fast pre-import drop-gate: MOTIS aborts the *entire* import on the first
+    # feed with a timezone field it can't resolve, costing a ~30-min cycle to
+    # find one bad feed. The sanitizer fixes agency_timezone/stop_timezone in
+    # the common case; this scans the actual staged zips (in seconds) and DROPS
+    # any straggler — stale-cache leftovers, unforeseen junk — so one bad feed
+    # can never abort the run. Dropping a handful out of ~1600 is fine.
     problems = _scan_invalid_timezones(staged)
     if problems:
+        bad_names = {name for name, _ in problems}
         logger.warning(
-            "Pre-import tz scan: %d staged feeds still have invalid agency_timezone:",
+            "Pre-import tz scan: dropping %d feeds with an invalid timezone field:",
             len(problems),
         )
-        for name, val in problems[:15]:
-            logger.warning("  - %s: %r", name, val)
+        for name, detail in problems[:15]:
+            logger.warning("  - %s: %s", name, detail)
         if len(problems) > 15:
             logger.warning("  ... and %d more", len(problems) - 15)
+        staged = [s for s in staged if s.name not in bad_names]
     else:
         logger.info(
-            "Pre-import tz scan: all %d staged feeds have a valid agency_timezone",
+            "Pre-import tz scan: all %d staged feeds have valid timezone fields",
             len(staged),
         )
+
+    write_motis_config(DATA_DIR, OSM_FILENAME, staged, first_day, args.num_days)
 
     if args.prepare_only:
         print(f"\nPrepared {len(staged)} feeds + config.yml in {DATA_DIR} (import skipped).")
