@@ -368,13 +368,33 @@ def download_osm_pbf(force: bool = False) -> Path:
 # Phase 2: GTFS sanitization + date handling
 # ============================================================================
 
+def _normalize_table(raw: bytes) -> bytes:
+    """Strip BOM + surrounding whitespace from every CSV cell; normalize EOL to LF.
+
+    GTFS forbids surrounding whitespace in fields, but sloppy producers emit
+    ``", "``-style delimiters and CRLF line endings. The stray leading space
+    turns ``America/Chicago`` into ``" America/Chicago"``, which fails MOTIS's
+    strict timezone lookup (and can break other strict parses). Round-tripping
+    through ``csv`` preserves quoting/embedded commas while trimming each cell.
+    """
+    text = raw.decode("utf-8-sig", errors="replace")
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    # skipinitialspace honors quotes that follow a ", " delimiter (so an embedded
+    # comma in a quoted field isn't split); .strip() handles trailing whitespace.
+    for row in csv.reader(io.StringIO(text), skipinitialspace=True):
+        writer.writerow([c.strip() for c in row])
+    return buf.getvalue().encode("utf-8")
+
+
 def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
     """Sanitize GTFS zips for MOTIS compatibility.
 
     - Flattens files nested in subdirectories to the zip root.
     - Strips header-only (empty) optional tables.
+    - Normalizes CSV whitespace/BOM/EOL in every table (see _normalize_table).
     - Drops feeds missing required tables or ``agency_timezone``.
-    Returns paths to sanitized copies or unchanged originals.
+    Returns paths to sanitized copies (or cached copies from a prior run).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     result: list[Path] = []
@@ -427,15 +447,12 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
                     dropped += 1
                     continue
 
-                needs_rewrite = any("/" in file_map[b] for b in file_map)
-
                 empty_tables: set[str] = set()
                 for basename, zip_path in file_map.items():
                     tdata = zin.read(zip_path).decode("utf-8", errors="replace").strip()
                     lines = tdata.split("\n")
                     if len(lines) <= 1 and lines[0].strip():
                         empty_tables.add(zip_path)
-                        needs_rewrite = True
 
                 if empty_tables:
                     empty_basenames = {
@@ -450,15 +467,13 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
                         dropped += 1
                         continue
 
-                if not needs_rewrite:
-                    result.append(gtfs_path)
-                    continue
-
+                # Always rewrite: flatten nested paths to root, drop empty
+                # optional tables, and normalize CSV whitespace/BOM/EOL.
                 with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zout:
                     for basename, zip_path in file_map.items():
                         if zip_path in empty_tables:
                             continue
-                        zout.writestr(basename, zin.read(zip_path))
+                        zout.writestr(basename, _normalize_table(zin.read(zip_path)))
                 result.append(out_path)
                 sanitized += 1
         except zipfile.BadZipFile:
@@ -468,7 +483,7 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
 
     if sanitized or dropped:
         logger.info(
-            "GTFS sanitization: %d sanitized, %d dropped, %d unchanged",
+            "GTFS sanitization: %d normalized, %d dropped, %d cached",
             sanitized, dropped, len(result) - sanitized,
         )
     return result
