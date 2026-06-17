@@ -34,6 +34,14 @@ Or deploy via Portainer as a **Git-backed stack** pointing at the folder
 (auto-update on push). Add workers to Portainer as standard **Agent** endpoints
 over Tailscale (e.g. `orange:9001`) — Edge agents aren't needed on a mesh.
 
+The Portainer **server** runs once on razz (in `razz-gateway/`). Each *other* box
+gets the bootstrap **agent** so the razz dashboard can see it — run once locally
+on that box (it's deliberately not Portainer-managed; see the file's header):
+```bash
+docker compose -f agent-compose.yaml up -d   # on orange, optionally cube/thinkbox
+```
+Then in the razz UI: **Environments → Add environment → Agent → `<host>:9001`**.
+
 ## Migration status
 
 Migrating off a 4-node K3s cluster. Three independent, individually-safe steps:
