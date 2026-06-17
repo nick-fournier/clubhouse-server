@@ -41,16 +41,6 @@ on that box (it's deliberately not Portainer-managed; see the file's header):
 docker compose -f agent-compose.yaml up -d   # on orange, optionally cube/thinkbox
 ```
 Then in the razz UI: **Environments → Add environment → Agent → `<host>:9001`**.
-
-## Migration status
-
-Migrating off a 4-node K3s cluster. Three independent, individually-safe steps:
-
-1. **OSRM into git + dashboard** — `orange/` now holds the OSRM stack (absorbed
-   from the old `osrm-server` repo) with reproducible data (`orange/prep-data.sh`).
-   Stand up Portainer on razz, add orange as an agent. ✅ repo work done.
-2. **Control plane to the Pi** — `razz-gateway/` runs the tunnel + web + dashboard;
-   `tunnel.yml` repointed at `orange:5000`. Deploy on razz.
 3. **Retire K3s** — once Compose serves all traffic, run `k3s-uninstall.sh` /
    `k3s-agent-uninstall.sh` on the nodes. (K8s manifests already removed from git.)
 
