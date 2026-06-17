@@ -31,8 +31,11 @@ uv run prep-data.py             # download US GTFS + OSM, sanitize, import
 The prep tool's deps are managed by [uv](https://docs.astral.sh/uv/)
 (`pyproject.toml` + `uv.lock`); `uv run` creates the project venv on first use,
 so nothing lands in base Python. Useful flags: `--download-only`,
-`--num-days N` (timetable window, default 30), `--date YYYY-MM-DD` (reference
-week), `--force-download`, `--force-rebuild`.
+`--prepare-only` (sanitize + write `config.yml` but skip the slow `motis
+import`, so you can inspect the staged feeds first), `--num-days N` (timetable
+window, default 30), `--date YYYY-MM-DD` (reference week), `--force-download`,
+`--force-rebuild`. A fast pre-import scan verifies every staged feed has a valid
+`agency_timezone` before the import starts.
 
 `prep-data.py` discovers every US GTFS feed from the
 [Mobility Database](https://mobilitydatabase.org) (free token), downloads the

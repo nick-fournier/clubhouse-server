@@ -23,6 +23,7 @@ unavailable those feeds are dropped instead. No numpy/scipy/h3/py-motis.
 Usage:
   uv run prep-data.py                   # full pipeline (download + import)
   uv run prep-data.py --download-only   # just fetch GTFS + OSM
+  uv run prep-data.py --prepare-only    # sanitize + config, skip the slow import
   uv run prep-data.py --num-days 30     # timetable window (default 30)
   uv run prep-data.py --date 2026-06-16 # override reference date (a Monday)
   uv run prep-data.py --force-rebuild   # re-import even if a dataset exists
@@ -838,6 +839,34 @@ def run_import(data_dir: Path, tag: str = MOTIS_TAG) -> None:
     logger.info("MOTIS import complete: %s", IMPORT_MARKER)
 
 
+def _scan_invalid_timezones(feeds: list[Path]) -> list[tuple[str, str]]:
+    """Return (feed_name, bad_value) for staged feeds with a missing/invalid
+    agency_timezone. Expected empty after sanitization — a non-empty result
+    means a feed would fail `motis import`'s timetable VERIFY step.
+    """
+    problems: list[tuple[str, str]] = []
+    for f in feeds:
+        try:
+            with zipfile.ZipFile(f) as z:
+                if "agency.txt" not in z.namelist():
+                    problems.append((f.name, "<no agency.txt>"))
+                    continue
+                reader = csv.DictReader(
+                    io.StringIO(z.read("agency.txt").decode("utf-8-sig", errors="replace"))
+                )
+                if "agency_timezone" not in (reader.fieldnames or []):
+                    problems.append((f.name, "<no agency_timezone column>"))
+                    continue
+                for r in reader:
+                    val = (r.get("agency_timezone") or "").strip()
+                    if not _valid_tz(val):
+                        problems.append((f.name, val or "<empty>"))
+                        break
+        except Exception as e:
+            problems.append((f.name, f"<read error: {e}>"))
+    return problems
+
+
 def _link_or_copy(src: Path, dest: Path) -> None:
     """Hardlink src→dest (fall back to copy across filesystems)."""
     if dest.exists():
@@ -861,7 +890,10 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--download-only", action="store_true",
-                        help="Only download GTFS + OSM (skip import)")
+                        help="Only download GTFS + OSM (skip sanitize + import)")
+    parser.add_argument("--prepare-only", action="store_true",
+                        help="Download + sanitize + write config, but skip `motis import` "
+                             "(inspect staged feeds before the slow import)")
     parser.add_argument("--force-rebuild", action="store_true",
                         help="Re-import even if a dataset already exists")
     parser.add_argument("--force-download", action="store_true",
@@ -891,7 +923,7 @@ def main() -> None:
         ref = date.today()
     first_day = ref - timedelta(days=ref.weekday())  # Monday of ref week
 
-    if IMPORT_MARKER.exists() and not args.force_rebuild:
+    if IMPORT_MARKER.exists() and not args.force_rebuild and not args.prepare_only:
         logger.info("Dataset already imported (%s). Use --force-rebuild to redo.", IMPORT_MARKER)
         print("\nDataset present. Start the server with: docker compose up -d")
         return
@@ -910,11 +942,35 @@ def main() -> None:
     osm_dest = DATA_DIR / OSM_FILENAME
     _link_or_copy(osm_path, osm_dest)
 
-    # ---- Phase 3: config + import ----
+    # ---- Phase 3: config + (optional) import ----
     print("\n" + "#" * 60 + "\n# Phase 3: write config + motis import\n" + "#" * 60)
     write_motis_config(DATA_DIR, OSM_FILENAME, staged, first_day, args.num_days)
-    run_import(DATA_DIR)
 
+    # Fast pre-import safety net: every staged feed should have a valid
+    # agency_timezone after sanitization. Catch any stragglers in seconds
+    # rather than 30 minutes into `motis import`.
+    problems = _scan_invalid_timezones(staged)
+    if problems:
+        logger.warning(
+            "Pre-import tz scan: %d staged feeds still have invalid agency_timezone:",
+            len(problems),
+        )
+        for name, val in problems[:15]:
+            logger.warning("  - %s: %r", name, val)
+        if len(problems) > 15:
+            logger.warning("  ... and %d more", len(problems) - 15)
+    else:
+        logger.info(
+            "Pre-import tz scan: all %d staged feeds have a valid agency_timezone",
+            len(staged),
+        )
+
+    if args.prepare_only:
+        print(f"\nPrepared {len(staged)} feeds + config.yml in {DATA_DIR} (import skipped).")
+        print("Re-run without --prepare-only to import.")
+        return
+
+    run_import(DATA_DIR)
     print("\nImport complete. Start the server with: docker compose up -d")
 
 
