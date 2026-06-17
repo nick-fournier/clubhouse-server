@@ -14,7 +14,10 @@ Routing-only profile (fits the 16GB box): street_routing ON, but geocoding /
 reverse_geocoding / tiles OFF — the address index is the big resident-memory
 hog and thinkbox is a pure routing backend (clients send coordinates).
 
-Stdlib only — no numpy/scipy/h3/py-motis. Just Python 3 + Docker.
+Stdlib only, except one optional dependency: `timezonefinder` (pip install
+timezonefinder). When a feed omits the GTFS-required agency_timezone, it's
+inferred from a representative stop coordinate and injected; without the package
+those feeds are dropped instead. No numpy/scipy/h3/py-motis. Python 3 + Docker.
 
 Usage:
   python3 prep-data.py                  # full pipeline (download + import)
@@ -387,6 +390,87 @@ def _normalize_table(raw: bytes) -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
+# Lazy singleton — TimezoneFinder loads boundary data once and is reused.
+_TZ_FINDER = None
+_TZ_FINDER_TRIED = False
+
+
+def _lookup_timezone(lat: float, lon: float) -> str | None:
+    """Return the IANA timezone at (lat, lon), or None.
+
+    Uses the optional ``timezonefinder`` package (offline boundary polygons).
+    If it isn't installed, warns once and returns None so the caller drops the
+    feed rather than crashing the whole run.
+    """
+    global _TZ_FINDER, _TZ_FINDER_TRIED
+    if not _TZ_FINDER_TRIED:
+        _TZ_FINDER_TRIED = True
+        try:
+            from timezonefinder import TimezoneFinder
+            _TZ_FINDER = TimezoneFinder()
+        except ImportError:
+            logger.warning(
+                "timezonefinder not installed — cannot infer missing "
+                "agency_timezone; such feeds will be dropped. "
+                "Install it: pip install timezonefinder"
+            )
+    if _TZ_FINDER is None:
+        return None
+    try:
+        return _TZ_FINDER.timezone_at(lat=lat, lng=lon)
+    except Exception:
+        return None
+
+
+def _representative_coord(
+    zin: zipfile.ZipFile, file_map: dict[str, str]
+) -> tuple[float, float] | None:
+    """Per-axis median (lat, lon) of a feed's valid stops, or None."""
+    if "stops.txt" not in file_map:
+        return None
+    text = _normalize_table(zin.read(file_map["stops.txt"])).decode("utf-8")
+    lats: list[float] = []
+    lons: list[float] = []
+    for row in csv.DictReader(io.StringIO(text)):
+        try:
+            la = float(row["stop_lat"])
+            lo = float(row["stop_lon"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if -90 <= la <= 90 and -180 <= lo <= 180 and not (la == 0 and lo == 0):
+            lats.append(la)
+            lons.append(lo)
+    if not lats:
+        return None
+    lats.sort()
+    lons.sort()
+    mid = len(lats) // 2
+    return lats[mid], lons[mid]
+
+
+def _inject_timezone(agency_text: str, tz: str) -> bytes:
+    """Return agency.txt bytes with ``agency_timezone`` filled in with *tz*.
+
+    Adds the column if absent; fills only empty values so any present zones are
+    preserved. *agency_text* is the already-normalized table text.
+    """
+    reader = csv.DictReader(io.StringIO(agency_text))
+    fields = list(reader.fieldnames or [])
+    if "agency_timezone" not in fields:
+        fields.append("agency_timezone")
+    rows = []
+    for r in reader:
+        if not (r.get("agency_timezone") or "").strip():
+            r["agency_timezone"] = tz
+        rows.append(r)
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n", extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({k: (r.get(k) or "") for k in fields})
+    return buf.getvalue().encode("utf-8")
+
+
 def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
     """Sanitize GTFS zips for MOTIS compatibility.
 
@@ -398,7 +482,7 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     result: list[Path] = []
-    sanitized = dropped = 0
+    sanitized = dropped = inferred = 0
 
     for gtfs_path in gtfs_files:
         out_path = output_dir / gtfs_path.name
@@ -431,13 +515,22 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
                 reader = csv.DictReader(io.StringIO(agency_text))
                 fields = reader.fieldnames or []
                 tz_values = [(r.get("agency_timezone") or "").strip() for r in reader]
+                agency_override: bytes | None = None
                 if "agency_timezone" not in fields or not any(tz_values):
-                    logger.warning(
-                        "Dropping %s: no agency_timezone (MOTIS requires it)",
-                        gtfs_path.name,
-                    )
-                    dropped += 1
-                    continue
+                    # Infer the zone from a representative stop coordinate and
+                    # inject it, rather than dropping the feed.
+                    coord = _representative_coord(zin, file_map)
+                    tz = _lookup_timezone(*coord) if coord else None
+                    if not tz:
+                        logger.warning(
+                            "Dropping %s: no agency_timezone and could not infer one",
+                            gtfs_path.name,
+                        )
+                        dropped += 1
+                        continue
+                    agency_override = _inject_timezone(agency_text, tz)
+                    inferred += 1
+                    logger.debug("Inferred agency_timezone=%s for %s", tz, gtfs_path.name)
 
                 empty_tables: set[str] = set()
                 for basename, zip_path in file_map.items():
@@ -465,7 +558,10 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
                     for basename, zip_path in file_map.items():
                         if zip_path in empty_tables:
                             continue
-                        zout.writestr(basename, _normalize_table(zin.read(zip_path)))
+                        if basename == "agency.txt" and agency_override is not None:
+                            zout.writestr(basename, agency_override)
+                        else:
+                            zout.writestr(basename, _normalize_table(zin.read(zip_path)))
                 result.append(out_path)
                 sanitized += 1
         except zipfile.BadZipFile:
@@ -475,8 +571,8 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
 
     if sanitized or dropped:
         logger.info(
-            "GTFS sanitization: %d normalized, %d dropped, %d cached",
-            sanitized, dropped, len(result) - sanitized,
+            "GTFS sanitization: %d normalized (%d tz-inferred), %d dropped, %d cached",
+            sanitized, inferred, dropped, len(result) - sanitized,
         )
     return result
 

@@ -25,18 +25,30 @@ roughly several GB). Run prep on an SSD with some swap headroom.
 Multi-GB and **not** in git (root `.gitignore` covers `**/data/`). Reproducible:
 
 ```bash
-cp example.env .env          # fill in MOBILITY_DB_REFRESH_TOKEN
-python3 prep-data.py          # download US GTFS + OSM, sanitize, import
+cp example.env .env             # fill in MOBILITY_DB_REFRESH_TOKEN
+pip install timezonefinder      # optional, recommended (see below)
+python3 prep-data.py            # download US GTFS + OSM, sanitize, import
 ```
 Useful flags: `--download-only`, `--num-days N` (timetable window, default 30),
 `--date YYYY-MM-DD` (reference week), `--force-download`, `--force-rebuild`.
 
 `prep-data.py` discovers every US GTFS feed from the
 [Mobility Database](https://mobilitydatabase.org) (free token), downloads the
-Geofabrik `us-latest.osm.pbf`, sanitizes feeds (flatten nested zips, drop feeds
-missing required tables / `agency_timezone`), shifts expired feeds onto the
-timetable window, writes `config.yml`, and runs `motis import`. Re-runs are
-incremental (cached downloads; import skipped unless `--force-rebuild`).
+Geofabrik `us-latest.osm.pbf`, sanitizes feeds (flatten nested zips, normalize
+CSV whitespace/BOM/CRLF, drop feeds missing required tables), shifts expired
+feeds onto the timetable window, writes `config.yml`, and runs `motis import`.
+Re-runs are incremental (cached downloads; import skipped unless
+`--force-rebuild`).
+
+**Whitespace normalization matters:** some agencies (e.g. Metra) emit `", "`
+delimiters, leaving a leading space that turns `America/Chicago` into
+`" America/Chicago"` and fails MOTIS's strict timezone lookup — the sanitizer
+trims every cell to prevent this.
+
+**`timezonefinder` (optional):** MOTIS requires `agency_timezone`, but some feeds
+omit it. With `timezonefinder` installed, prep infers the zone from a
+representative stop coordinate (correct for Arizona/Indiana edge cases) and
+injects it; without it, those feeds are dropped instead.
 
 If you have no token, drop GTFS `.zip` files into `./data/gtfs/` manually and
 prep will use those.
