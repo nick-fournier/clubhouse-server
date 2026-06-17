@@ -32,5 +32,8 @@ The Django app (on razz) connects over Tailscale with `PG_HOST=cube`. The OSRM
 batch client VM also lives on this box.
 
 ## Note
-`container_name` is still `thinkbox-postgres` for continuity with the existing
-volume/backups — rename only if you also migrate the data volume.
+This compose is a build/reference artifact — the live database runs from the
+**Unraid template**, which owns the real data-path mapping. The `name:` and
+`container_name:` here only take effect if you ever run the stack with
+`docker compose` directly; if you do, note the project name sets the volume name
+(`cube-db_pg_data`), so don't change it out from under an existing compose volume.

@@ -1,9 +1,9 @@
-name: thinkbox-db
+name: cube-db
 
 services:
   postgres:
     image: nichfournier/launchpad-postgres:latest  # Default: Pull from remote
-    container_name: thinkbox-postgres
+    container_name: cube-postgres
     restart: unless-stopped
     env_file: .env
     ports:
@@ -15,7 +15,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: thinkbox-pgadmin
+    container_name: cube-pgadmin
     restart: unless-stopped
     env_file: .env
     ports:

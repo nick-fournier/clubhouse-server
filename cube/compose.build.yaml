@@ -3,4 +3,4 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: thinkbox-postgres
+    image: cube-postgres
