@@ -490,8 +490,14 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     result: list[Path] = []
     sanitized = dropped = inferred = 0
+    total = len(gtfs_files)
+    last_log = time.time()
+    logger.info("Sanitizing %d GTFS feeds...", total)
 
-    for gtfs_path in gtfs_files:
+    for i, gtfs_path in enumerate(gtfs_files):
+        if time.time() - last_log >= 5.0:
+            last_log = time.time()
+            logger.info("  sanitize %d/%d (kept %d, dropped %d)", i, total, len(result), dropped)
         out_path = output_dir / gtfs_path.name
         if out_path.exists():
             if zipfile.is_zipfile(out_path):
@@ -640,11 +646,16 @@ def shift_expired_feeds(
     output_dir.mkdir(parents=True, exist_ok=True)
     result: list[Path] = []
     shifted = 0
+    total = len(gtfs_files)
+    last_log = time.time()
     DATE_TABLES = {"calendar.txt", "calendar_dates.txt"}
     DATE_COLS_CALENDAR = {"start_date", "end_date"}
     DATE_COLS_DATES = {"date"}
 
-    for gtfs_path in gtfs_files:
+    for i, gtfs_path in enumerate(gtfs_files):
+        if time.time() - last_log >= 5.0:
+            last_log = time.time()
+            logger.info("  date-shift %d/%d (shifted %d)", i, total, shifted)
         try:
             with zipfile.ZipFile(gtfs_path, "r") as zf:
                 end_date = _get_feed_end_date(zf)
