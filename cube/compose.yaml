@@ -20,6 +20,13 @@ services:
     env_file: .env
     ports:
       - 8080:80
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin   # persist saved server connections across recreates
 
 volumes:
+  # Pin to the EXISTING live volume. 
+  # Without this, a project named cube-db would create
+  # an empty cube-db_pg_data and Postgres would boot with no data.
   pg_data:
+    name: postgres_pg_data
+  pgadmin_data:
