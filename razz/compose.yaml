@@ -1,25 +1,10 @@
-name: razz-gateway
+name: razz
 
-# Control plane on the Pi4: the single management dashboard, the public front
-# door (Cloudflare tunnel), and the light Django hobby site. No bandwidth-heavy
-# or untrusted-data workloads live here.
+# Control plane on the Pi4: the public front door (Cloudflare tunnel),
+# and the light Django hobby site.
+# No bandwidth-heavy or untrusted-data workloads live here.
 
 services:
-  # Single-pane dashboard. Add orange (and later thinkbox/cube) as Agent
-  # endpoints over Tailscale: Environments -> Add -> Agent -> orange:9001.
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    restart: unless-stopped
-    ports:
-      - "9443:9443"   # HTTPS UI
-      - "8000:8000"   # optional: Edge agent tunnel (unused with standard agents)
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    networks:
-      - razz-network
-
   web:
     image: nichfournier/launchpad-web:latest
     container_name: web

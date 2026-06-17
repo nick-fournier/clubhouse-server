@@ -41,6 +41,12 @@ on that box (it's deliberately not Portainer-managed; see the file's header):
 docker compose -f agent-compose.yaml up -d   # on orange, optionally cube/thinkbox
 ```
 Then in the razz UI: **Environments → Add environment → Agent → `<host>:9001`**.
+
+**Why the agent is its own file, not a service in the box's `compose.yaml`:** so the
+app stacks can be Portainer **git-stacks** (push → auto-redeploy). If the agent
+lived inside a Portainer-managed stack, every deploy would recreate Portainer's
+own connection mid-run and break the deploy. Keeping it separate lets the workload
+redeploy freely while the agent stays put.
 3. **Retire K3s** — once Compose serves all traffic, run `k3s-uninstall.sh` /
    `k3s-agent-uninstall.sh` on the nodes. (K8s manifests already removed from git.)
 
