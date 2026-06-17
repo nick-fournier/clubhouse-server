@@ -38,6 +38,7 @@ import json
 import logging
 import os
 import re
+import ssl
 import subprocess
 import sys
 import time
@@ -70,6 +71,18 @@ MOTIS_TAG = os.environ.get("MOTIS_TAG", "2.8.3")
 DATA_DIR = Path(__file__).resolve().parent / "data"
 GTFS_DIR = DATA_DIR / "gtfs"
 USER_AGENT = "thinkbox-motis/1.0"
+
+# Some agencies block default clients (403) or have expired TLS certs. For the
+# ~3% of feeds with no Mobility-hosted mirror we fall back to the agency URL and
+# retry with a browser UA / unverified TLS — it's a public GTFS zip, not an
+# authenticated endpoint, so cert verification buys little here.
+BROWSER_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+_UNVERIFIED_SSL = ssl.create_default_context()
+_UNVERIFIED_SSL.check_hostname = False
+_UNVERIFIED_SSL.verify_mode = ssl.CERT_NONE
 
 REQUIRED_TABLES = {"agency.txt", "stops.txt", "routes.txt", "trips.txt", "stop_times.txt"}
 # `motis import` writes its compiled dataset here; presence means "imported".
@@ -194,20 +207,52 @@ def discover_feeds() -> list[dict[str, str]]:
 
 
 def _download_one(url: str, dest: Path) -> tuple[str, bool, str]:
-    """Download a single file. Returns ``(url, success, message)``."""
-    try:
-        req = Request(url, headers={"User-Agent": USER_AGENT})
-        with urlopen(req, timeout=120) as resp:
-            data = resp.read()
-        dest.write_bytes(data)
-        if not zipfile.is_zipfile(dest):
-            dest.unlink()
-            return url, False, "not a valid zip"
-        return url, True, f"{len(data) / 1e6:.1f} MB"
-    except (URLError, HTTPError, TimeoutError, OSError) as e:
-        if dest.exists():
-            dest.unlink()
-        return url, False, str(e)
+    """Download a single file with tiered retries. Returns ``(url, ok, msg)``.
+
+    Strategies, in order: default UA + verified TLS, then browser UA (for 403s),
+    then browser UA + unverified TLS (for expired/invalid agency certs). A 404 or
+    other hard error stops early — no point retrying a dead link.
+    """
+    last = "unknown error"
+    for ua, ctx in (
+        (USER_AGENT, None),
+        (BROWSER_UA, None),
+        (BROWSER_UA, _UNVERIFIED_SSL),
+    ):
+        try:
+            req = Request(url, headers={"User-Agent": ua})
+            with urlopen(req, timeout=120, context=ctx) as resp:
+                data = resp.read()
+            dest.write_bytes(data)
+            if not zipfile.is_zipfile(dest):
+                dest.unlink()
+                return url, False, "not a valid zip"
+            return url, True, f"{len(data) / 1e6:.1f} MB"
+        except HTTPError as e:
+            last = f"HTTP {e.code}"
+            if e.code in (401, 403, 429):
+                continue  # try a browser UA
+            break  # 404 / 5xx — don't bother retrying
+        except URLError as e:
+            last = str(e.reason)
+            if isinstance(e.reason, ssl.SSLError) or "CERTIFICATE" in str(e.reason).upper():
+                continue  # try unverified TLS
+            break
+        except (TimeoutError, OSError) as e:
+            last = str(e)
+            break
+    if dest.exists():
+        dest.unlink()
+    return url, False, last
+
+
+def _progress(done: int, total: int, ok: int, fail: int, width: int = 30) -> None:
+    """Render an in-place download progress bar to stderr."""
+    frac = done / total if total else 1.0
+    filled = int(width * frac)
+    bar = "#" * filled + "-" * (width - filled)
+    sys.stderr.write(f"\r  [{bar}] {done}/{total}  ok={ok} fail={fail}  ")
+    sys.stderr.flush()
 
 
 def download_gtfs_feeds(force: bool = False, max_workers: int = 8) -> list[Path]:
@@ -243,31 +288,45 @@ def download_gtfs_feeds(force: bool = False, max_workers: int = 8) -> list[Path]
 
     cached = len(feeds) - len(to_download)
     if to_download:
-        logger.info(
-            "Downloading %d GTFS feeds (%d already cached)...",
-            len(to_download), cached,
-        )
-        ok = fail = 0
+        total = len(to_download)
+        logger.info("Downloading %d GTFS feeds (%d already cached)...", total, cached)
+        ok = fail = done = 0
+        failures: list[tuple[str, str]] = []
+        # Per-feed failures are collected (not logged inline) so they don't
+        # shred the live progress bar; a summary prints at the end.
         try:
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
                 futures = {
                     pool.submit(_download_one, f["url"], d): f["name"]
                     for f, d in to_download
                 }
+                _progress(0, total, 0, 0)
                 for fut in as_completed(futures):
                     name = futures[fut]
                     _url, success, msg = fut.result()
+                    done += 1
                     if success:
                         ok += 1
-                        logger.debug("  ok %s (%s)", name, msg)
                     else:
                         fail += 1
-                        logger.warning("  fail %s: %s", name, msg)
+                        failures.append((name, msg))
+                    _progress(done, total, ok, fail)
         except KeyboardInterrupt:
+            sys.stderr.write("\n")
             logger.error("Interrupted during GTFS download — aborting.")
             pool.shutdown(wait=False, cancel_futures=True)
             raise
+        sys.stderr.write("\n")
         logger.info("Downloads: %d succeeded, %d failed", ok, fail)
+        if failures:
+            logger.info(
+                "Skipped %d feeds (dead/blocked agency links, no Mobility mirror):",
+                len(failures),
+            )
+            for name, msg in failures[:15]:
+                logger.info("  - %s: %s", name, msg)
+            if len(failures) > 15:
+                logger.info("  ... and %d more", len(failures) - 15)
     else:
         logger.info("All %d feeds already cached", cached)
 
