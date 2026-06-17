@@ -3,8 +3,13 @@ ingress:
   - hostname: "launchpad.nicholasfournier.com"
     service: http://nginx:80
 
-  # OSRM routing — forwarded to the orange worker over Tailscale (MagicDNS).
-  # When OSRM is scaled to a second host, repoint this at the HAProxy endpoint.
+  # router.nicholasfournier.com fans out by path (no rewrite — the API
+  # namespaces are disjoint): MOTIS transit (/api/...) → thinkbox:8080, OSRM
+  # (everything else: /route, /table, /nearest, /match, /trip, /tile) → orange.
+  # Both workers reached over Tailscale (MagicDNS). Rules match top-to-bottom.
+  - hostname: "router.nicholasfournier.com"
+    path: "^/api/.*"
+    service: http://thinkbox:8080
   - hostname: "router.nicholasfournier.com"
     service: http://orange:5000
 

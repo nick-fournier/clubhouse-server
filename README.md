@@ -11,17 +11,21 @@ hardware, so an orchestrator's scheduler buys nothing here. See
 |--------|------|-----------|------|
 | `razz-gateway/` | razz (Pi4) | arm64 / 1G | Portainer server, cloudflared tunnel, Django `web` + nginx |
 | `orange/` | orange (Pi5) | arm64 / 1G | OSRM (`osrm-nginx` :5000 + per-profile backends) |
-| `thinkbox/` | thinkbox (M72e) | amd64 / 2.5G | *idle* — reserved for MOTIS (future) |
+| `thinkbox/` | thinkbox (M72e) | amd64 / 2.5G | MOTIS (transit routing, all-US, `:8080`) |
 | `cube/` | cube (Unraid) | amd64 / 2×2.5G | Postgres (+ Plex, dev/gaming VM, Unraid-managed) |
 
 Cross-host traffic uses **Tailscale MagicDNS** hostnames (`razz`, `orange`,
 `cube`), not Docker service names. Public traffic enters only through the
 cloudflared tunnel on razz:
 - `launchpad.nicholasfournier.com` → razz nginx → Django web
-- `router.nicholasfournier.com` → `orange:5000` (OSRM) over Tailscale
+- `router.nicholasfournier.com` → split by URL path over Tailscale:
+  `/api/...` → `thinkbox:8080` (MOTIS transit), everything else → `orange:5000` (OSRM)
 
-There is **no load balancer**: OSRM runs on a single host for now. If orange
-saturates, duplicate `orange/` onto `thinkbox/` and add HAProxy on cube.
+Routing is **split by host, not load-balanced**: `orange` runs OSRM (car/bike/
+foot road routing) and `thinkbox` runs MOTIS (transit). They share one public
+hostname but neither fronts the other — the cloudflared tunnel fans out by path
+(`razz/tunnel.yml`), since the MOTIS (`/api/...`) and OSRM (`/route`, `/table`,
+…) namespaces are disjoint and need no rewriting.
 
 ## Per-host bring-up
 

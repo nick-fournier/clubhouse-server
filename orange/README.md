@@ -1,8 +1,9 @@
 # orange — OSRM routing worker
 
 Runs OSRM (`osrm-nginx` on :5000 fronting per-profile `osrm-routed` backends).
-This is the **only OSRM host** for now; if it saturates, duplicate this stack
-onto `thinkbox/` and add HAProxy (see the top-level README).
+This is the **only OSRM host** in the fleet, so it serves all profiles
+(car, bike, foot, custom) and all routes. The nginx config routes by regex to
+the appropriate backend based on the profile in the URL.
 
 ## Layout
 - `compose.yaml` — the stack (absorbed from the old `osrm-server` repo).

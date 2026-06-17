@@ -1,8 +1,5 @@
 name: osrm-server
 
-# OSRM routing worker. Single host (orange) for now; if load demands, this same
-# stack is duplicated onto thinkbox and fronted by HAProxy (see repo README).
-#
 # Map data lives in ./data (gitignored, multi-GB). It is reproducible from
 # prep-data.sh + the source .pbf — see that script and orange/README.md.
 

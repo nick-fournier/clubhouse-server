@@ -1,0 +1,39 @@
+name: motis-server
+
+# MOTIS multimodal transit routing, all-US (transit + street/walk routing).
+# This box owns MOTIS; orange owns OSRM (responsibilities are split, no HAProxy).
+#
+# The dataset under ./data (multi-GB, gitignored) is REPRODUCIBLE from
+# prep-data.py + the source feeds — see that script and thinkbox/README.md.
+# prep-data.py runs `motis import`; this stack only serves the result.
+#
+# Routing-only profile (config.yml has geocoding/reverse_geocoding/tiles off)
+# keeps resident memory within the 16GB box. mem_limit is a ceiling, not a
+# reservation: the timetable + street graph are memory-mapped and paged from
+# disk, so RSS is the working set, not the whole dataset.
+
+volumes:
+  motis-data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./data
+      o: bind
+
+services:
+  motis:
+    image: ghcr.io/motis-project/motis:2.8.3
+    container_name: motis_transit
+    working_dir: /data
+    # `motis import` (prep-data.py) writes root-owned files into ./data, so the
+    # server runs as root too. Entrypoint/command match py-motis's known-good
+    # `--entrypoint /motis ... server` invocation.
+    user: root
+    entrypoint: /motis
+    command: server
+    volumes:
+      - motis-data:/data
+    ports:
+      - "8080:8080"
+    mem_limit: 14G
+    restart: unless-stopped
