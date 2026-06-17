@@ -59,6 +59,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Lift csv's default 128 KB field cap so legitimately large fields (long HTML
+# descriptions, etc.) parse — but keep it bounded so a pathological unterminated
+# quote that slurps an entire table still errors out and gets the feed dropped,
+# rather than silently merging rows into one garbage cell.
+csv.field_size_limit(4 * 1024 * 1024)  # 4 MB
+
 
 # ============================================================================
 # Constants
@@ -488,8 +494,10 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
     for gtfs_path in gtfs_files:
         out_path = output_dir / gtfs_path.name
         if out_path.exists():
-            result.append(out_path)
-            continue
+            if zipfile.is_zipfile(out_path):
+                result.append(out_path)
+                continue
+            out_path.unlink()  # partial/corrupt from an aborted run — redo it
         try:
             with zipfile.ZipFile(gtfs_path, "r") as zin:
                 names = zin.namelist()
@@ -566,7 +574,18 @@ def _sanitize_gtfs(gtfs_files: list[Path], output_dir: Path) -> list[Path]:
                 result.append(out_path)
                 sanitized += 1
         except zipfile.BadZipFile:
-            logger.warning("Skipping corrupt zip: %s", gtfs_path.name)
+            logger.warning("Dropping %s: corrupt zip", gtfs_path.name)
+            if out_path.exists():
+                out_path.unlink()
+            dropped += 1
+            continue
+        except Exception as e:
+            # One malformed feed (bad CSV quoting, oversized field, etc.) must
+            # never abort a 1600-feed run — drop it and move on. Remove any
+            # partial output so the next run's cache check doesn't reuse it.
+            logger.warning("Dropping %s: sanitize failed (%s)", gtfs_path.name, e)
+            if out_path.exists():
+                out_path.unlink()
             dropped += 1
             continue
 
