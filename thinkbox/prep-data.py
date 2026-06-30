@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "timezonefinder>=6.5",
+#     "tzdata>=2024.1",
+# ]
+# ///
 """prep-data.py — build the MOTIS dataset under ./data for the thinkbox server.
 
 The analog of orange/prep-data.sh, but for MOTIS instead of OSRM, and covering
@@ -80,7 +87,9 @@ MOBILITY_DB_FEEDS_URL = "https://api.mobilitydatabase.org/v1/gtfs_feeds"
 MOTIS_IMAGE = "ghcr.io/motis-project/motis"
 MOTIS_TAG = os.environ.get("MOTIS_TAG", "2.8.3")
 
-DATA_DIR = Path(__file__).resolve().parent / "data"
+# Output dataset dir. Defaults to <script>/data; override with MOTIS_DATA_DIR so a
+# consumer repo (e.g. graph_seq's setup_motis.sh) can build straight into its own tree.
+DATA_DIR = Path(os.environ.get("MOTIS_DATA_DIR", Path(__file__).resolve().parent / "data")).resolve()
 GTFS_DIR = DATA_DIR / "gtfs"
 USER_AGENT = "thinkbox-motis/1.0"
 
