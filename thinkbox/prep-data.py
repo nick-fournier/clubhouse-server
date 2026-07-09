@@ -894,6 +894,13 @@ def write_motis_config(
         "street_routing: true",
         "geocoding: false",
         "reverse_geocoding: false",
+        # Server API limits are inherited by the import's data/config.yml
+        # snapshot — the file the server actually honors. Without this the
+        # default onetoall cap (90 min) silently 422s bulk one-to-all skim
+        # fills that need the full horizon (observed: an entire period table
+        # written all-unreachable at 800 q/s).
+        "limits:",
+        "  onetoall_max_travel_minutes: 360",
         "timetable:",
         f"  first_day: {first_day.isoformat()}",
         f"  num_days: {num_days}",
