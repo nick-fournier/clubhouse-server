@@ -790,6 +790,12 @@ def shift_expired_feeds(
                 if start_date is not None:
                     max_weeks = max((target_date - start_date).days // 7, 1)
                     weeks_shift = min(weeks_shift, max_weeks)
+                # Floor: ALWAYS lift the end past first_day. A short-span feed
+                # can't cover the whole window; sliding it to overlap the
+                # window start beats stranding it dead before first_day
+                # (start-clamp alone left week-long feeds unroutable).
+                weeks_floor = ((target_date - end_date).days // 7) + 1
+                weeks_shift = max(weeks_shift, weeks_floor)
 
                 out_path = output_dir / gtfs_path.name
                 if out_path.exists():
@@ -808,23 +814,28 @@ def shift_expired_feeds(
                         basename = item.filename.rsplit("/", 1)[-1] if "/" in item.filename else item.filename
 
                         if basename in DATE_TABLES:
+                            # csv module, NOT split(","): quoted service names
+                            # containing commas mis-align naive splits — the
+                            # rewrite then shifts the WRONG column (observed:
+                            # start_date corrupted past end_date, end never
+                            # lifted → feed stays dead despite "shifting").
                             text = data.decode("utf-8-sig", errors="replace")
-                            lines = text.strip().split("\n")
-                            if len(lines) < 2:
+                            rows = list(csv.reader(io.StringIO(text)))
+                            if len(rows) < 2:
                                 zout.writestr(item.filename, data)
                                 continue
-                            header = lines[0]
-                            cols = [c.strip() for c in header.split(",")]
+                            cols = [c.strip() for c in rows[0]]
                             date_cols = DATE_COLS_CALENDAR if basename == "calendar.txt" else DATE_COLS_DATES
                             date_idxs = [i for i, c in enumerate(cols) if c in date_cols]
                             if not date_idxs:
                                 zout.writestr(item.filename, data)
                                 continue
-                            new_lines = [header]
-                            for line in lines[1:]:
-                                if not line.strip():
+                            buf = io.StringIO()
+                            writer = csv.writer(buf, lineterminator="\n")
+                            writer.writerow(rows[0])
+                            for fields in rows[1:]:
+                                if not fields or not any(f.strip() for f in fields):
                                     continue
-                                fields = line.split(",")
                                 for idx in date_idxs:
                                     if idx < len(fields):
                                         raw = fields[idx].strip()
@@ -833,8 +844,8 @@ def shift_expired_feeds(
                                             fields[idx] = _shift_date(d, weeks_shift)
                                         except ValueError:
                                             pass
-                                new_lines.append(",".join(fields))
-                            zout.writestr(item.filename, "\n".join(new_lines) + "\n")
+                                writer.writerow(fields)
+                            zout.writestr(item.filename, buf.getvalue())
                         else:
                             zout.writestr(item, data)
 
