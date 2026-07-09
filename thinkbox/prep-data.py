@@ -720,20 +720,56 @@ def _shift_date(d: date, weeks: int) -> str:
     return (d + timedelta(weeks=weeks)).strftime("%Y%m%d")
 
 
+def _get_feed_date_range(zf: zipfile.ZipFile) -> tuple[date | None, date | None]:
+    """Return (earliest service start, latest service end) from a GTFS zip."""
+    min_d: date | None = None
+    max_d = _get_feed_end_date(zf)
+    if "calendar.txt" in zf.namelist():
+        with zf.open("calendar.txt") as f:
+            reader = csv.DictReader(io.TextIOWrapper(f, "utf-8-sig"))
+            for row in reader:
+                try:
+                    s = datetime.strptime(row["start_date"], "%Y%m%d").date()
+                    if min_d is None or s < min_d:
+                        min_d = s
+                except (ValueError, KeyError):
+                    pass
+    if min_d is None and "calendar_dates.txt" in zf.namelist():
+        with zf.open("calendar_dates.txt") as f:
+            reader = csv.DictReader(io.TextIOWrapper(f, "utf-8-sig"))
+            for row in reader:
+                try:
+                    d = datetime.strptime(row["date"], "%Y%m%d").date()
+                    if min_d is None or d < min_d:
+                        min_d = d
+                except (ValueError, KeyError):
+                    pass
+    return min_d, max_d
+
+
 def shift_expired_feeds(
     gtfs_files: list[Path], target_date: date, output_dir: Path,
+    num_days: int = 30,
 ) -> list[Path]:
-    """Shift calendar dates of expired feeds so they cover ``target_date``.
+    """Shift calendar dates of expired feeds so they cover the timetable window.
 
-    For each feed whose service ends before ``target_date``, rewrites
-    ``calendar.txt`` / ``calendar_dates.txt`` shifting all dates forward by
-    whole weeks (preserving day-of-week). Active feeds pass through unchanged.
+    For each feed whose service ends before ``target_date`` (the window's
+    first_day), rewrites ``calendar.txt`` / ``calendar_dates.txt`` shifting all
+    dates forward by whole weeks (preserving day-of-week) so the shifted end
+    reaches ``target_date + num_days`` — shifting to barely-past first_day left
+    copies that expired again within days. If lifting that far would push a
+    short feed's start past first_day, the shift is clamped so the window START
+    stays covered. Cached shifted copies are validated against the CURRENT
+    window and rebuilt when short: a name-keyed cache from an earlier run was
+    computed for an earlier window (this + the staging shadow reimported
+    expired feeds in the 2026-06 build). Active feeds pass through unchanged.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     result: list[Path] = []
     shifted = 0
     total = len(gtfs_files)
     last_log = time.time()
+    cover_end = target_date + timedelta(days=num_days)
     DATE_TABLES = {"calendar.txt", "calendar_dates.txt"}
     DATE_COLS_CALENDAR = {"start_date", "end_date"}
     DATE_COLS_DATES = {"date"}
@@ -744,19 +780,27 @@ def shift_expired_feeds(
             logger.info("  date-shift %d/%d (shifted %d)", i, total, shifted)
         try:
             with zipfile.ZipFile(gtfs_path, "r") as zf:
-                end_date = _get_feed_end_date(zf)
+                start_date, end_date = _get_feed_date_range(zf)
                 if end_date is None or end_date >= target_date:
                     result.append(gtfs_path)
                     continue
 
-                days_short = (target_date - end_date).days
+                days_short = (cover_end - end_date).days
                 weeks_shift = (days_short // 7) + 1
+                if start_date is not None:
+                    max_weeks = max((target_date - start_date).days // 7, 1)
+                    weeks_shift = min(weeks_shift, max_weeks)
 
                 out_path = output_dir / gtfs_path.name
                 if out_path.exists():
-                    result.append(out_path)
-                    shifted += 1
-                    continue
+                    with zipfile.ZipFile(out_path, "r") as zc:
+                        cached_end = _get_feed_end_date(zc)
+                    want_end = end_date + timedelta(weeks=weeks_shift)
+                    if cached_end is not None and cached_end >= want_end:
+                        result.append(out_path)
+                        shifted += 1
+                        continue
+                    out_path.unlink()   # stale: shifted for an earlier window
 
                 with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zout:
                     for item in zf.infolist():
@@ -802,8 +846,8 @@ def shift_expired_feeds(
 
     if shifted:
         logger.info(
-            "Date-shifted %d / %d expired feeds to cover %s",
-            shifted, len(gtfs_files), target_date,
+            "Date-shifted %d / %d expired feeds to cover %s .. %s",
+            shifted, len(gtfs_files), target_date, cover_end,
         )
     return result
 
@@ -931,9 +975,21 @@ def _scan_invalid_timezones(feeds: list[Path]) -> list[tuple[str, str]]:
 
 
 def _link_or_copy(src: Path, dest: Path) -> None:
-    """Hardlink src→dest (fall back to copy across filesystems)."""
+    """Hardlink src→dest (fall back to copy across filesystems).
+
+    An existing dest is REPLACED unless it is already the same inode: a leftover
+    from a previous run shares the name but not necessarily the content. The
+    old ``if dest.exists(): return`` let stale root hardlinks (original expired
+    zips) shadow the freshly shifted feeds — the whole shift phase ran and then
+    the import silently consumed the un-shifted originals (2026-06 build).
+    """
     if dest.exists():
-        return
+        try:
+            if dest.samefile(src):
+                return
+        except OSError:
+            pass
+        dest.unlink()
     try:
         os.link(src.resolve(), dest)
     except OSError:
@@ -994,7 +1050,8 @@ def main() -> None:
     # ---- Phase 2: sanitize + shift ----
     print("\n" + "#" * 60 + "\n# Phase 2: sanitize + date-shift feeds\n" + "#" * 60)
     clean = _sanitize_gtfs(gtfs_files, DATA_DIR / "_sanitized")
-    clean = shift_expired_feeds(clean, first_day, DATA_DIR / "_shifted")
+    clean = shift_expired_feeds(clean, first_day, DATA_DIR / "_shifted",
+                                num_days=args.num_days)
 
     # Flatten feeds + OSM into the data dir root that MOTIS imports from.
     staged: list[Path] = []
@@ -1031,6 +1088,44 @@ def main() -> None:
             "Pre-import tz scan: all %d staged feeds have valid timezone fields",
             len(staged),
         )
+
+    # Freshness gate: a staged feed with zero service on/after first_day
+    # contributes stops but no trips — the silent-staleness class that poisoned
+    # the 2026-06 build (stale root hardlinks + stale _shifted cache killed
+    # SacRT/SF Muni/AC Transit routing). shift_expired_feeds repairs every
+    # expired feed, so any dead feed HERE is a pipeline bug: fail loudly.
+    window_end = first_day + timedelta(days=args.num_days)
+    dead: list[tuple[str, date]] = []
+    ending_early: list[tuple[str, date]] = []
+    for f in staged:
+        try:
+            with zipfile.ZipFile(f) as zf:
+                end = _get_feed_end_date(zf)
+        except zipfile.BadZipFile:
+            continue
+        if end is None:
+            continue
+        if end < first_day:
+            dead.append((f.name, end))
+        elif end < window_end:
+            ending_early.append((f.name, end))
+    if ending_early:
+        logger.warning(
+            "%d staged feeds end inside the timetable window (genuine wind-downs "
+            "or start-clamped shifts) — first few:", len(ending_early))
+        for name, end in ending_early[:10]:
+            logger.warning("  - %s ends %s", name, end)
+    if dead:
+        for name, end in dead[:20]:
+            logger.error("DEAD feed staged: %s (service ended %s < first_day %s)",
+                         name, end, first_day)
+        raise SystemExit(
+            f"{len(dead)} staged feeds have NO service on/after first_day "
+            f"{first_day} — stale-cache poisoning; refusing to import. "
+            f"Clear stale zips in {DATA_DIR} root / _shifted and re-run."
+        )
+    logger.info("Freshness gate: all %d staged feeds have service in the window",
+                len(staged))
 
     write_motis_config(DATA_DIR, OSM_FILENAME, staged, first_day, args.num_days)
 
