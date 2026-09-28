@@ -38,7 +38,7 @@ services:
       - razz-network
 
   tunnel:
-    image: cloudflare/cloudflared:2024.12.2
+    image: cloudflare/cloudflared:2026.9.3
     container_name: tunnel
     restart: unless-stopped
     command: tunnel --no-autoupdate --config /app/config.yml run
