@@ -1,0 +1,39 @@
+name: orange
+
+# Compute worker (Orange Pi 5, RK3588). Runs the portfolio lab
+# (github.com/nick-fournier/portfolio-lab): one image, two services.
+#   portfolio-web   read-only dashboard, public at portfolio.nicholasfournier.com
+#                   (razz tunnel -> orange:8100 over Tailscale)
+#   portfolio-jobs  scheduler: daily ingest after 20:00 ET, weekly verify + baseline backtests
+# Data lives on the NVMe at /home/nick/portfolio-data, outside this repo.
+# Deploy: docker compose pull && docker compose up -d
+
+x-portfolio: &portfolio
+  image: nichfournier/portfolio-lab:latest
+  user: "1001:1001"  # nick on orange, owner of the data directory
+  restart: unless-stopped
+  environment:
+    - PORTFOLIO_DATA_DIR=/data
+
+services:
+  portfolio-web:
+    <<: *portfolio
+    container_name: portfolio-web
+    command: plab serve --host 0.0.0.0 --port 8100
+    ports:
+      - "8100:8100"
+    volumes:
+      - /home/nick/portfolio-data:/data:ro
+    mem_limit: 1g
+
+  portfolio-jobs:
+    <<: *portfolio
+    container_name: portfolio-jobs
+    command: plab schedule
+    env_file: .env  # Alpaca keys; see example.env
+    volumes:
+      - /home/nick/portfolio-data:/data
+    mem_limit: 10g
+    cpus: 6
+    healthcheck:
+      disable: true  # no HTTP server in this role
