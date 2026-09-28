@@ -1,7 +1,17 @@
+# Public hostname -> service. Every public URL in the homelab is listed here.
+# Each new hostname also needs a proxied DNS CNAME -> <TUNNEL_ID>.cfargotunnel.com.
+# Old launchpad paths (/fns/, /bvi-itinerary/, ...) redirect in home/nginx.conf:
+# update both together.
 ingress:
-  # Hobby site — served locally by the gateway nginx.
+  # Static hobby sites, served on razz.
   - hostname: "launchpad.nicholasfournier.com"
-    service: http://nginx:80
+    service: http://home:80
+
+  - hostname: "fns.nicholasfournier.com"
+    service: http://fns:80
+
+  - hostname: "bvi.nicholasfournier.com"
+    service: http://bvi:80
 
   # Fans out for osrm and motis.
   - hostname: "motis.nicholasfournier.com"

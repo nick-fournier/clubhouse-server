@@ -9,23 +9,29 @@ hardware, so an orchestrator's scheduler buys nothing here. See
 
 | Folder | Host | Arch / NIC | Runs |
 |--------|------|-----------|------|
-| `razz-gateway/` | razz (Pi4) | arm64 / 1G | Portainer server, cloudflared tunnel, Django `web` + nginx |
+| `razz/` | razz (Pi4) | arm64 / 1G | cloudflared tunnel, static sites (`home`, `fns`, `bvi`) |
 | `orange/` | orange (Pi5) | arm64 / 1G | OSRM (`osrm-nginx` :5000 + per-profile backends) |
 | `thinkbox/` | thinkbox (M72e) | amd64 / 2.5G | MOTIS (transit routing, all-US, `:8080`) |
 | `cube/` | cube (Unraid) | amd64 / 2×2.5G | Postgres (+ Plex, dev/gaming VM, Unraid-managed) |
 
 Cross-host traffic uses **Tailscale MagicDNS** hostnames (`razz`, `orange`,
 `cube`), not Docker service names. Public traffic enters only through the
-cloudflared tunnel on razz:
-- `launchpad.nicholasfournier.com` → razz nginx → Django web
-- `router.nicholasfournier.com` → split by URL path over Tailscale:
-  `/api/...` → `thinkbox:8080` (MOTIS transit), everything else → `orange:5000` (OSRM)
+cloudflared tunnel on razz, and **`razz/tunnel.yml` is the list of every public
+hostname**:
+- `launchpad.nicholasfournier.com` → razz `home` (index page, plus redirects for
+  the old Django launchpad paths in `razz/home/nginx.conf`)
+- `fns.nicholasfournier.com` → razz `fns` (image from `nick-fournier/sbyc_course_app`)
+- `bvi.nicholasfournier.com` → razz `bvi` (image from `nick-fournier/bvi_itinerary`)
+- `motis.nicholasfournier.com` `/api/...` → `thinkbox:8080` (MOTIS transit)
+- `osrm.nicholasfournier.com` → `orange:5000` (OSRM road routing)
 
 Routing is **split by host, not load-balanced**: `orange` runs OSRM (car/bike/
-foot road routing) and `thinkbox` runs MOTIS (transit). They share one public
-hostname but neither fronts the other — the cloudflared tunnel fans out by path
-(`razz/tunnel.yml`), since the MOTIS (`/api/...`) and OSRM (`/route`, `/table`,
-…) namespaces are disjoint and need no rewriting.
+foot road routing) and `thinkbox` runs MOTIS (transit), each behind its own
+public hostname.
+
+Static sites stay on razz so they don't go down when a worker is busy or out of
+memory. Each app repo's CI pushes `nichfournier/<app>:latest`; deploy with
+`docker compose pull <svc> && docker compose up -d <svc>` in `razz/`.
 
 ## Per-host bring-up
 
