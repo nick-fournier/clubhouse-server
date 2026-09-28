@@ -17,10 +17,9 @@ hardware, so an orchestrator's scheduler buys nothing here. See
 Cross-host traffic uses **Tailscale MagicDNS** hostnames (`razz`, `orange`,
 `cube`), not Docker service names. Public traffic enters only through the
 cloudflared tunnel on razz, and **`razz/tunnel.yml` is the list of every public
-hostname**. DNS follows it automatically: the one-shot `dns-sync` service
-(`razz/dns-sync.sh`) runs on `docker compose up -d`, creates a proxied CNAME to
-the tunnel for each hostname, and deletes tunnel records no longer listed. After
-editing `tunnel.yml`, run `docker compose up -d && docker compose restart tunnel`.
+hostname**. A proxied wildcard DNS record (`*` → the tunnel) sends every
+subdomain to the tunnel, so adding a hostname needs no DNS change. After
+editing `tunnel.yml`, run `docker compose restart tunnel`.
 - `launchpad.nicholasfournier.com` → razz `home` (index page, plus redirects for
   the old Django launchpad paths in `razz/home/nginx.conf`)
 - `fns.nicholasfournier.com` → razz `fns` (image from `nick-fournier/sbyc_course_app`)

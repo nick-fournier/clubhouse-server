@@ -1,5 +1,6 @@
 # Public hostname -> service. Every public URL in the homelab is listed here.
-# DNS records are created from this file by dns-sync.sh on `docker compose up -d`.
+# DNS: a proxied wildcard CNAME (* -> <TUNNEL_ID>.cfargotunnel.com) sends every
+# subdomain here, so adding a hostname needs no DNS change.
 # cloudflared only reads this file at startup: `docker compose restart tunnel`
 # after editing it.
 # Old launchpad paths (/fns/, /bvi-itinerary/, ...) redirect in home/nginx.conf:
