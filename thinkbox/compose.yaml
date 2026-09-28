@@ -1,39 +1,75 @@
-name: motis-server
+name: thinkbox
 
-# MOTIS multimodal transit routing, all-US (transit + street/walk routing).
-# This box owns MOTIS; orange owns OSRM (responsibilities are split, no HAProxy).
+# Routing box: MOTIS (transit, all-US) and OSRM (car/bike/foot road routing).
+# Both memory-map their datasets, so RSS is the working set rather than the
+# whole dataset, and mem_limit is a ceiling, not a reservation.
 #
-# The dataset under ./data (multi-GB, gitignored) is REPRODUCIBLE from
-# prep-data.py + the source feeds — see that script and thinkbox/README.md.
-# prep-data.py runs `motis import`; this stack only serves the result.
-#
-# Routing-only profile (config.yml has geocoding/reverse_geocoding/tiles off)
-# keeps resident memory within the 16GB box. mem_limit is a ceiling, not a
-# reservation: the timetable + street graph are memory-mapped and paged from
-# disk, so RSS is the working set, not the whole dataset.
-
-volumes:
-  motis-data:
-    driver: local
-    driver_opts:
-      type: none
-      device: ./data
-      o: bind
+# Data lives under ./data (gitignored), one folder per service:
+#   ./data/motis   built by motis/prep-data.py (`motis import`)
+#   ./data/osrm    built by osrm/prep-data.sh (extract -> partition -> customize)
+# This stack only serves the results.
 
 services:
   motis:
     image: ghcr.io/motis-project/motis:2.8.3
     container_name: motis_transit
     working_dir: /data
-    # `motis import` (prep-data.py) writes root-owned files into ./data, so the
-    # server runs as root too. Entrypoint/command match py-motis's known-good
+    # `motis import` (prep-data.py) writes root-owned files into ./data/motis, so
+    # the server runs as root too. Entrypoint/command match py-motis's known-good
     # `--entrypoint /motis ... server` invocation.
     user: root
     entrypoint: /motis
     command: server
     volumes:
-      - motis-data:/data
+      - ./data/motis:/data
     ports:
       - "8080:8080"
     mem_limit: 14G
     restart: unless-stopped
+
+  # Routes /route/v1/<profile>/... to the matching backend (osrm/nginx.conf).
+  osrm-nginx:
+    image: nginx:1.27-alpine
+    container_name: osrm-nginx
+    restart: unless-stopped
+    volumes:
+      - ./osrm/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "5000:5000"
+    depends_on:
+      - osrm-backend-car
+      - osrm-backend-bicycle
+      - osrm-backend-foot
+
+  osrm-backend-car:
+    image: ghcr.io/project-osrm/osrm-backend:v26.9.0-debian
+    container_name: osrm-backend-car
+    restart: unless-stopped
+    command: osrm-routed -p 5001 --mmap --threads 4 --algorithm mld --max-matching-size 10000 /data/car/cropped_network.osrm
+    volumes:
+      - ./data/osrm:/data:ro
+    ports:
+      - "5001:5001"
+    mem_limit: 8G
+
+  osrm-backend-bicycle:
+    image: ghcr.io/project-osrm/osrm-backend:v26.9.0-debian
+    container_name: osrm-backend-bicycle
+    restart: unless-stopped
+    command: osrm-routed -p 5002 --mmap --threads 4 --algorithm mld --max-matching-size 10000 /data/bicycle/cropped_network.osrm
+    volumes:
+      - ./data/osrm:/data:ro
+    ports:
+      - "5002:5002"
+    mem_limit: 8G
+
+  osrm-backend-foot:
+    image: ghcr.io/project-osrm/osrm-backend:v26.9.0-debian
+    container_name: osrm-backend-foot
+    restart: unless-stopped
+    command: osrm-routed -p 5003 --mmap --threads 4 --algorithm mld --max-matching-size 10000 /data/foot/cropped_network.osrm
+    volumes:
+      - ./data/osrm:/data:ro
+    ports:
+      - "5003:5003"
+    mem_limit: 8G
