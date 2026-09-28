@@ -1,38 +1,39 @@
 name: razz
 
-# Control plane on the Pi4: the public front door (Cloudflare tunnel),
-# and the light Django hobby site.
-# No bandwidth-heavy or untrusted-data workloads live here.
+# Control plane on the Pi4: the public front door (Cloudflare tunnel) and the
+# static hobby sites. No compute-heavy or untrusted-data workloads live here, so
+# the sites stay up whatever the workers are doing.
+#
+# Public hostname -> service routing lives in tunnel.yml.
 
 services:
-  web:
-    image: nichfournier/launchpad-web:latest
-    container_name: web
+  # launchpad.nicholasfournier.com: index page + redirects for the old Django paths.
+  home:
+    image: nginx:1.27-alpine
+    container_name: home
     restart: unless-stopped
-    ports:
-      - "9000:9000"
-    env_file:
-      - .env
-    environment:
-      - DJANGO_ENV=production
+    mem_limit: 64m
     volumes:
-      - static_volume:/app/staticfiles
-      - media_volume:/app/mediafiles
+      - ./home/html:/usr/share/nginx/html:ro
+      - ./home/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - razz-network
 
-  nginx:
-    image: nginx:1.27.3-perl
-    container_name: nginx
+  # fns.nicholasfournier.com (github.com/nick-fournier/sbyc_course_app)
+  fns:
+    image: nichfournier/fns:latest
+    container_name: fns
     restart: unless-stopped
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - static_volume:/app/staticfiles
-      - media_volume:/app/mediafiles
-    ports:
-      - "80:80"
-    depends_on:
-      - web
+    mem_limit: 64m
+    networks:
+      - razz-network
+
+  # bvi.nicholasfournier.com (github.com/nick-fournier/bvi_itinerary)
+  bvi:
+    image: nichfournier/bvi:latest
+    container_name: bvi
+    restart: unless-stopped
+    mem_limit: 64m
     networks:
       - razz-network
 
@@ -47,15 +48,8 @@ services:
       - TUNNEL_ID=${TUNNEL_ID}
       - TUNNEL_TOKEN=${TUNNEL_TOKEN}
       - TZ=${TZ}
-    depends_on:
-      - web
     networks:
       - razz-network
-
-volumes:
-  static_volume:
-  media_volume:
-  portainer_data:
 
 networks:
   razz-network:

@@ -1,14 +1,19 @@
+# Public hostname -> service. Every public URL in the homelab is listed here.
+# DNS: a proxied wildcard CNAME (* -> <TUNNEL_ID>.cfargotunnel.com) sends every
+# subdomain here, so adding a hostname needs no DNS change.
+# cloudflared only reads this file at startup: `docker compose restart tunnel`
+# after editing it.
+# Old launchpad paths (/fns/, /bvi-itinerary/, ...) redirect in home/nginx.conf:
+# update both together.
 ingress:
-  # Hobby site — served locally by the gateway nginx.
+  # Static hobby sites, served on razz.
   - hostname: "launchpad.nicholasfournier.com"
-    service: http://nginx:80
+    service: http://home:80
 
-  # Fans out for osrm and motis.
-  - hostname: "motis.nicholasfournier.com"
-    path: "^/api/.*"
-    service: http://thinkbox:8080
+  - hostname: "fns.nicholasfournier.com"
+    service: http://fns:80
 
-  - hostname: "osrm.nicholasfournier.com"
-    service: http://orange:5000
+  - hostname: "bvi.nicholasfournier.com"
+    service: http://bvi:80
 
   - service: http_status:404
