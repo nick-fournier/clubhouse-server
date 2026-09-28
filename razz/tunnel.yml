@@ -1,7 +1,10 @@
-# Public hostname -> service. Every public URL in the homelab is listed here.
-# Each new hostname also needs a proxied DNS CNAME -> <TUNNEL_ID>.cfargotunnel.com.
-# Old launchpad paths (/fns/, /bvi-itinerary/, ...) redirect in home/nginx.conf:
-# update both together.
+# NOT APPLIED. The tunnel runs with TUNNEL_TOKEN, so it is remotely managed:
+# cloudflared takes its ingress rules from the Cloudflare dashboard
+# (Zero Trust -> Networks -> Tunnels -> "orange" -> Public Hostname) and ignores
+# this file. Edit routes there; this file mirrors the intended routing until the
+# tunnel is switched to a locally managed one (credentials file + this config).
+#
+# Old launchpad paths (/fns/, /bvi-itinerary/, ...) redirect in home/nginx.conf.
 ingress:
   # Static hobby sites, served on razz.
   - hostname: "launchpad.nicholasfournier.com"

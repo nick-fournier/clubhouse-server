@@ -16,8 +16,10 @@ hardware, so an orchestrator's scheduler buys nothing here. See
 
 Cross-host traffic uses **Tailscale MagicDNS** hostnames (`razz`, `orange`,
 `cube`), not Docker service names. Public traffic enters only through the
-cloudflared tunnel on razz, and **`razz/tunnel.yml` is the list of every public
-hostname**:
+cloudflared tunnel on razz. The tunnel is **remotely managed**: hostname routes
+live in the Cloudflare dashboard (Zero Trust → Networks → Tunnels → `orange` →
+Public Hostname), not in `razz/tunnel.yml`, which only mirrors them. Intended
+public hostnames:
 - `launchpad.nicholasfournier.com` → razz `home` (index page, plus redirects for
   the old Django launchpad paths in `razz/home/nginx.conf`)
 - `fns.nicholasfournier.com` → razz `fns` (image from `nick-fournier/sbyc_course_app`)
