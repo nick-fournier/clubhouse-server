@@ -8,7 +8,7 @@
 # ///
 """prep-data.py — build the MOTIS dataset under ./data for the thinkbox server.
 
-The analog of orange/prep-data.sh, but for MOTIS instead of OSRM, and covering
+The analog of ../osrm/prep-data.sh, but for MOTIS instead of OSRM, and covering
 ALL of the US. It makes the (multi-GB, gitignored) MOTIS import REPRODUCIBLE:
 
   1. download — discover + fetch US GTFS feeds (Mobility Database) and the
@@ -87,9 +87,11 @@ MOBILITY_DB_FEEDS_URL = "https://api.mobilitydatabase.org/v1/gtfs_feeds"
 MOTIS_IMAGE = "ghcr.io/motis-project/motis"
 MOTIS_TAG = os.environ.get("MOTIS_TAG", "2.8.3")
 
-# Output dataset dir. Defaults to <script>/data; override with MOTIS_DATA_DIR so a
+# Output dataset dir. Defaults to thinkbox/data/motis; override with MOTIS_DATA_DIR so a
 # consumer repo (e.g. graph_seq's setup_motis.sh) can build straight into its own tree.
-DATA_DIR = Path(os.environ.get("MOTIS_DATA_DIR", Path(__file__).resolve().parent / "data")).resolve()
+DATA_DIR = Path(os.environ.get(
+    "MOTIS_DATA_DIR", Path(__file__).resolve().parent.parent / "data" / "motis"
+)).resolve()
 GTFS_DIR = DATA_DIR / "gtfs"
 USER_AGENT = "thinkbox-motis/1.0"
 
@@ -116,7 +118,7 @@ IMPORT_MARKER = DATA_DIR / "data" / "meta" / "tt.json"
 
 def _load_dotenv(path: Path | None = None) -> None:
     """Load key=value pairs from a .env file into ``os.environ``."""
-    env_path = path or (Path(__file__).resolve().parent / ".env")
+    env_path = path or (Path(__file__).resolve().parent.parent / ".env")
     if not env_path.exists():
         return
     with env_path.open() as f:

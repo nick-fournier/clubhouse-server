@@ -3,9 +3,9 @@
 **/.env
 *.dump
 
-# OSRM compiled graph data (multi-GB, reproducible via orange/prep-data.sh)
+# Service data (multi-GB, reproducible via each host's prep scripts)
 **/data/
 
-# Python / uv (thinkbox prep tooling) — env is reproducible from uv.lock
+# Python / uv (thinkbox/motis prep tooling) — env is reproducible from uv.lock
 .venv/
 __pycache__/

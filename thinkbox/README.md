@@ -1,16 +1,38 @@
-# thinkbox — MOTIS transit routing (Lenovo M72e, x86 / 2.5G NIC)
+# thinkbox — routing box (Lenovo M72e, x86 / 2.5G NIC)
 
-Runs [MOTIS](https://github.com/motis-project/motis) — multimodal transit
-routing over **all of the US** (GTFS timetables + OpenStreetMap street/walk
-routing) on `:8080`. This box owns MOTIS; `orange` owns OSRM — the two routing
-responsibilities are split across hosts, so there's no HAProxy here.
+Runs both routing engines, reachable over Tailscale only (not public):
+- [MOTIS](https://github.com/motis-project/motis) on `:8080`: multimodal transit
+  routing over **all of the US** (GTFS timetables + OpenStreetMap street/walk routing).
+- [OSRM](https://github.com/Project-OSRM/osrm-backend) on `:5000`: car / bicycle /
+  foot road routing on the `cropped_network` extract, stock profiles.
+
+Both memory-map their data, so they share the 16GB box on working set rather
+than dataset size.
 
 ## Layout
-- `compose.yaml` — the MOTIS server stack (serves the prebuilt `./data`).
-- `prep-data.py` — builds the gitignored `./data` dataset (the OSRM `prep-data.sh` analog).
+- `compose.yaml` — one stack serving both (MOTIS + `osrm-nginx` + one backend per profile).
+- `motis/` — `prep-data.py` (+ uv project) builds `data/motis`.
+- `osrm/` — `prep-data.sh` builds `data/osrm/<profile>`; `nginx.conf` routes by profile.
+- `data/` — gitignored; `data/motis` and `data/osrm`.
 - `example.env` — copy to `.env`; holds the Mobility Database token.
 
-## Routing-only profile (why it fits 16GB)
+## OSRM
+```bash
+# data/osrm/cropped_network.osm.pbf is the source extract (cut to a boundary with
+# osmium; see nick-fournier/GraphSeq scripts/helpers/prepare_osrm.py)
+for p in car bicycle foot; do
+  osrm/prep-data.sh $p "$PWD/data/osrm/cropped_network.osm.pbf" $p
+done
+docker compose up -d
+curl "http://localhost:5000/route/v1/driving/-122.42,37.77;-122.41,37.78?overview=false"
+```
+`/route/v1/<profile>/...` is routed by keyword (`driving`, `cycling`, `walking`, and
+aliases; see `osrm/nginx.conf`). The OSRM version is pinned in both `compose.yaml`
+and `osrm/prep-data.sh`: graphs must be rebuilt when it changes.
+
+## MOTIS
+
+### Routing-only profile (why it fits 16GB)
 MOTIS memory-maps its dataset (`cista::mmap`), so serve-time RAM is the *working
 set*, not the whole dataset. The one feature that must be fully resident — the
 address/geocoding index (`adr`) — is the memory hog (~25GB on a full planet), so
@@ -21,12 +43,12 @@ thinkbox is a pure routing backend: clients send coordinates, not place names.
 The binding constraint is the **import peak** (building the US street graph,
 roughly several GB). Run prep on an SSD with some swap headroom.
 
-## Data (`./data`, gitignored)
+### Data (`data/motis`, gitignored)
 Multi-GB and **not** in git (root `.gitignore` covers `**/data/`). Reproducible:
 
 ```bash
 cp example.env .env             # fill in MOBILITY_DB_REFRESH_TOKEN
-uv run prep-data.py             # download US GTFS + OSM, sanitize, import
+cd motis && uv run prep-data.py   # download US GTFS + OSM, sanitize, import
 ```
 The prep tool's deps are managed by [uv](https://docs.astral.sh/uv/)
 (`pyproject.toml` + `uv.lock`); `uv run` creates the project venv on first use,
@@ -61,24 +83,19 @@ pre-import scan then DROPS any straggler that still carries an unresolvable
 timezone, so one bad feed can never abort the ~30-min import. `timezonefinder`
 comes from the uv-managed env.
 
-If you have no token, drop GTFS `.zip` files into `./data/gtfs/` manually and
+If you have no token, drop GTFS `.zip` files into `data/motis/gtfs/` manually and
 prep will use those.
 
 ## Deploy
-Via Portainer (Git-backed stack pointing at this folder) or directly:
 ```bash
 docker compose up -d
-curl "http://localhost:8080/"          # health / UI
+curl "http://localhost:8080/"          # MOTIS health / UI
+curl "http://localhost:5000/route/v1/driving/-122.42,37.77;-122.41,37.78?overview=false"
 ```
-Reachable from other mesh boxes over Tailscale at `thinkbox:8080`, and publicly
-at `https://router.nicholasfournier.com/api/...` — the cloudflared tunnel on
-razz routes that hostname's `/api/...` paths here and everything else to OSRM on
-orange (see `razz/tunnel.yml` and the top-level README). MOTIS's whole API lives
-under `/api/`, so the split needs no path rewriting. The MOTIS web UI at `/` is
-*not* exposed publicly (that path goes to OSRM); reach it over Tailscale if
-needed.
+Reachable from other mesh boxes over Tailscale at `thinkbox:8080` (MOTIS) and
+`thinkbox:5000` (OSRM). Neither is exposed publicly.
 
-## RAM fallbacks
+### RAM fallbacks
 If the full-US street import OOMs in practice:
 - lower `--num-days`, or
 - run transit-only: set `street_routing: false` in `config.yml` and skip the OSM

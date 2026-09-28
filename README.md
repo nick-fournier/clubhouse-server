@@ -10,8 +10,8 @@ hardware, so an orchestrator's scheduler buys nothing here. See
 | Folder | Host | Arch / NIC | Runs |
 |--------|------|-----------|------|
 | `razz/` | razz (Pi4) | arm64 / 1G | cloudflared tunnel, static sites (`home`, `fns`, `bvi`) |
-| `orange/` | orange (Pi5) | arm64 / 1G | OSRM (`osrm-nginx` :5000 + per-profile backends) |
-| `thinkbox/` | thinkbox (M72e) | amd64 / 2.5G | MOTIS (transit routing, all-US, `:8080`) |
+| `orange/` | orange (Pi5) | arm64 / 1G | *being repurposed* — compute worker for the portfolio lab |
+| `thinkbox/` | thinkbox (M72e) | amd64 / 2.5G | Routing: MOTIS (transit, `:8080`) + OSRM (car/bike/foot, `:5000`) |
 | `cube/` | cube (Unraid) | amd64 / 2×2.5G | Postgres (+ Plex, dev/gaming VM, Unraid-managed) |
 
 Cross-host traffic uses **Tailscale MagicDNS** hostnames (`razz`, `orange`,
@@ -25,7 +25,7 @@ editing `tunnel.yml`, run `docker compose restart tunnel`.
 - `fns.nicholasfournier.com` → razz `fns` (image from `nick-fournier/sbyc_course_app`)
 - `bvi.nicholasfournier.com` → razz `bvi` (image from `nick-fournier/bvi_itinerary`)
 
-OSRM (orange) and MOTIS (thinkbox) are being retired and are no longer public.
+MOTIS and OSRM run on thinkbox and are reachable over Tailscale only (see `thinkbox/README.md`).
 
 Static sites stay on razz so they don't go down when a worker is busy or out of
 memory. Each app repo's CI pushes `nichfournier/<app>:latest`; deploy with
