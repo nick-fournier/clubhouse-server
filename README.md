@@ -17,17 +17,16 @@ hardware, so an orchestrator's scheduler buys nothing here. See
 Cross-host traffic uses **Tailscale MagicDNS** hostnames (`razz`, `orange`,
 `cube`), not Docker service names. Public traffic enters only through the
 cloudflared tunnel on razz, and **`razz/tunnel.yml` is the list of every public
-hostname**:
+hostname**. DNS follows it automatically: the one-shot `dns-sync` service
+(`razz/dns-sync.sh`) runs on `docker compose up -d`, creates a proxied CNAME to
+the tunnel for each hostname, and deletes tunnel records no longer listed. After
+editing `tunnel.yml`, run `docker compose up -d && docker compose restart tunnel`.
 - `launchpad.nicholasfournier.com` → razz `home` (index page, plus redirects for
   the old Django launchpad paths in `razz/home/nginx.conf`)
 - `fns.nicholasfournier.com` → razz `fns` (image from `nick-fournier/sbyc_course_app`)
 - `bvi.nicholasfournier.com` → razz `bvi` (image from `nick-fournier/bvi_itinerary`)
-- `motis.nicholasfournier.com` `/api/...` → `thinkbox:8080` (MOTIS transit)
-- `osrm.nicholasfournier.com` → `orange:5000` (OSRM road routing)
 
-Routing is **split by host, not load-balanced**: `orange` runs OSRM (car/bike/
-foot road routing) and `thinkbox` runs MOTIS (transit), each behind its own
-public hostname.
+OSRM (orange) and MOTIS (thinkbox) are being retired and are no longer public.
 
 Static sites stay on razz so they don't go down when a worker is busy or out of
 memory. Each app repo's CI pushes `nichfournier/<app>:latest`; deploy with

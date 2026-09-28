@@ -51,6 +51,21 @@ services:
     networks:
       - razz-network
 
+  # One-shot: creates the DNS record for each hostname in tunnel.yml, then exits.
+  # Runs on every `docker compose up -d`; check with `docker compose logs dns-sync`.
+  # The tunnel deliberately doesn't wait on it.
+  dns-sync:
+    image: alpine:3.20
+    container_name: dns-sync
+    restart: "no"
+    command: sh /dns-sync.sh
+    volumes:
+      - ./tunnel.yml:/tunnel.yml:ro
+      - ./dns-sync.sh:/dns-sync.sh:ro
+    environment:
+      - TUNNEL_ID=${TUNNEL_ID}
+      - CF_API_TOKEN=${CF_API_TOKEN}
+
 networks:
   razz-network:
     driver: bridge

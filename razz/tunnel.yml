@@ -1,5 +1,7 @@
 # Public hostname -> service. Every public URL in the homelab is listed here.
-# Each new hostname also needs a proxied DNS CNAME -> <TUNNEL_ID>.cfargotunnel.com.
+# DNS records are created from this file by dns-sync.sh on `docker compose up -d`.
+# cloudflared only reads this file at startup: `docker compose restart tunnel`
+# after editing it.
 # Old launchpad paths (/fns/, /bvi-itinerary/, ...) redirect in home/nginx.conf:
 # update both together.
 ingress:
@@ -12,13 +14,5 @@ ingress:
 
   - hostname: "bvi.nicholasfournier.com"
     service: http://bvi:80
-
-  # Fans out for osrm and motis.
-  - hostname: "motis.nicholasfournier.com"
-    path: "^/api/.*"
-    service: http://thinkbox:8080
-
-  - hostname: "osrm.nicholasfournier.com"
-    service: http://orange:5000
 
   - service: http_status:404
