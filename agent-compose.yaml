@@ -1,14 +1,14 @@
 # Portainer agent — BOOTSTRAP layer (shared by every managed box).
 #
-# Run this ONCE, locally, on each box you want visible in the razz Portainer
-# dashboard (orange, and optionally cube/thinkbox):
+# Run this ONCE, locally, on each box you want visible in the Portainer
+# dashboard on cube (razz4, orange, thinkbox):
 #
 #   docker compose -f agent-compose.yaml up -d
 #
 # Deliberately NOT a Portainer-managed git-stack and NOT folded into a box's app
 # stack: the agent must exist before Portainer can reach the box, and Portainer
 # must never recreate its own agent mid-deploy. So it's deployed by hand here and
-# left alone. The razz box itself needs no agent — Portainer manages it locally.
+# left alone. cube itself needs no agent — Portainer manages it locally.
 name: portainer-agent
 
 services:
