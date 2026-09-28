@@ -14,7 +14,7 @@ hardware, so an orchestrator's scheduler buys nothing here. See
 | `thinkbox/` | thinkbox (M72e) | amd64 / 2.5G | Routing: MOTIS (transit, `:8080`) + OSRM (car/bike/foot, `:5000`) |
 | `cube/` | cube (Unraid) | amd64 / 2×2.5G | Postgres (+ Plex, dev/gaming VM, Unraid-managed) |
 
-Cross-host traffic uses **Tailscale MagicDNS** hostnames (`razz`, `orange`,
+Cross-host traffic uses **Tailscale MagicDNS** hostnames (`razz4`, `orange`,
 `cube`), not Docker service names. Public traffic enters only through the
 cloudflared tunnel on razz, and **`razz/tunnel.yml` is the list of every public
 hostname**. A proxied wildcard DNS record (`*` → the tunnel) sends every
@@ -42,13 +42,14 @@ Or deploy via Portainer as a **Git-backed stack** pointing at the folder
 (auto-update on push). Add workers to Portainer as standard **Agent** endpoints
 over Tailscale (e.g. `orange:9001`) — Edge agents aren't needed on a mesh.
 
-The Portainer **server** runs once on razz (in `razz-gateway/`). Each *other* box
-gets the bootstrap **agent** so the razz dashboard can see it — run once locally
-on that box (it's deliberately not Portainer-managed; see the file's header):
+The Portainer **server** runs on cube, as an Unraid-managed container (not in
+this repo). Each *other* box gets the bootstrap **agent** so the cube dashboard
+can see it — run once locally on that box (it's deliberately not
+Portainer-managed; see the file's header):
 ```bash
-docker compose -f agent-compose.yaml up -d   # on orange, optionally cube/thinkbox
+docker compose -f agent-compose.yaml up -d   # on razz4, orange, thinkbox
 ```
-Then in the razz UI: **Environments → Add environment → Agent → `<host>:9001`**.
+Then in the Portainer UI on cube: **Environments → Add environment → Agent → `<host>:9001`**.
 
 **Why the agent is its own file, not a service in the box's `compose.yaml`:** so the
 app stacks can be Portainer **git-stacks** (push → auto-redeploy). If the agent
