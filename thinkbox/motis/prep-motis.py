@@ -6,9 +6,9 @@
 #     "tzdata>=2024.1",
 # ]
 # ///
-"""prep-data.py — build the MOTIS dataset under ./data for the thinkbox server.
+"""prep-motis.py — build the MOTIS dataset under thinkbox/data/motis.
 
-The analog of ../osrm/prep-data.py, but for MOTIS instead of OSRM, and covering
+The analog of ../osrm/prep-osrm.py, but for MOTIS instead of OSRM, and covering
 ALL of the US. It makes the (multi-GB, gitignored) MOTIS import REPRODUCIBLE:
 
   1. download — discover + fetch US GTFS feeds (Mobility Database) and the
@@ -22,18 +22,18 @@ reverse_geocoding / tiles OFF — the address index is the big resident-memory
 hog and thinkbox is a pure routing backend (clients send coordinates).
 
 Stdlib only, except one dependency: `timezonefinder`, managed by uv (see
-pyproject.toml / uv.lock). Run via `uv run prep-data.py` so it executes in the
+pyproject.toml / uv.lock). Run via `uv run prep-motis.py` so it executes in the
 project venv. When a feed omits the GTFS-required agency_timezone, it's inferred
 from a representative stop coordinate and injected; if timezonefinder is somehow
 unavailable those feeds are dropped instead. No numpy/scipy/h3/py-motis.
 
 Usage:
-  uv run prep-data.py                   # full pipeline (download + import)
-  uv run prep-data.py --download-only   # just fetch GTFS + OSM
-  uv run prep-data.py --prepare-only    # sanitize + config, skip the slow import
-  uv run prep-data.py --num-days 30     # timetable window (default 30)
-  uv run prep-data.py --date 2026-06-16 # override reference date (a Monday)
-  uv run prep-data.py --force-rebuild   # re-import even if a dataset exists
+  uv run prep-motis.py                   # full pipeline (download + import)
+  uv run prep-motis.py --download-only   # just fetch GTFS + OSM
+  uv run prep-motis.py --prepare-only    # sanitize + config, skip the slow import
+  uv run prep-motis.py --num-days 30     # timetable window (default 30)
+  uv run prep-motis.py --date 2026-06-16 # override reference date (a Monday)
+  uv run prep-motis.py --force-rebuild   # re-import even if a dataset exists
 
 Environment (thinkbox/.env, gitignored):
   MOBILITY_DB_REFRESH_TOKEN  — register free at https://mobilitydatabase.org

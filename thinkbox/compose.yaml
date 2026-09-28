@@ -5,8 +5,8 @@ name: thinkbox
 # whole dataset, and mem_limit is a ceiling, not a reservation.
 #
 # Data lives under ./data (gitignored), one folder per service:
-#   ./data/motis   built by motis/prep-data.py (`motis import`)
-#   ./data/osrm    built by osrm/prep-data.py (extract -> partition -> customize)
+#   ./data/motis   built by motis/prep-motis.py (`motis import`)
+#   ./data/osrm    built by osrm/prep-osrm.py (extract -> partition -> customize)
 # This stack only serves the results.
 
 services:
@@ -14,7 +14,7 @@ services:
     image: ghcr.io/motis-project/motis:2.8.3
     container_name: motis_transit
     working_dir: /data
-    # `motis import` (prep-data.py) writes root-owned files into ./data/motis, so
+    # `motis import` (prep-motis.py) writes root-owned files into ./data/motis, so
     # the server runs as root too. Entrypoint/command match py-motis's known-good
     # `--entrypoint /motis ... server` invocation.
     user: root

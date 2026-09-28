@@ -3,9 +3,9 @@
 # requires-python = ">=3.10"
 # dependencies = []
 # ///
-"""prep-data.py — build the OSRM routing graphs under thinkbox/data/osrm.
+"""prep-osrm.py — build the OSRM routing graphs under thinkbox/data/osrm.
 
-The analog of ../motis/prep-data.py, for OSRM. It makes the (multi-GB,
+The analog of ../motis/prep-motis.py, for OSRM. It makes the (multi-GB,
 gitignored) graphs REPRODUCIBLE from one source extract and the stock profiles:
 
   for each profile (car, bicycle, foot):
@@ -23,10 +23,10 @@ Stdlib only. Builds are memory-heavy: stop MOTIS first on the 16GB box, and run
 inside tmux (or nohup) since a full build takes hours.
 
 Usage:
-  python3 prep-data.py                          # build any missing/outdated profile
-  python3 prep-data.py --profiles car foot      # just these
-  python3 prep-data.py --force-rebuild          # rebuild even if up to date
-  python3 prep-data.py --source <path-or-url>   # different .osm.pbf extract
+  python3 prep-osrm.py                          # build any missing/outdated profile
+  python3 prep-osrm.py --profiles car foot      # just these
+  python3 prep-osrm.py --force-rebuild          # rebuild even if up to date
+  python3 prep-osrm.py --source <path-or-url>   # different .osm.pbf extract
 
 Environment:
   OSRM_DATA_DIR  — output dir (default thinkbox/data/osrm)

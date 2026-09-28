@@ -11,13 +11,13 @@ than dataset size.
 
 ## Layout
 - `compose.yaml` — one stack serving both (MOTIS + `osrm-nginx` + one backend per profile).
-- `motis/` — `prep-data.py` (+ uv project) builds `data/motis`.
-- `osrm/` — `prep-data.py` builds `data/osrm/<profile>`; `nginx.conf` routes by profile.
+- `motis/` — `prep-motis.py` (+ uv project) builds `data/motis`.
+- `osrm/` — `prep-osrm.py` builds `data/osrm/<profile>`; `nginx.conf` routes by profile.
 - `data/` — gitignored; `data/motis` and `data/osrm`.
 - `example.env` — copy to `.env`; holds the Mobility Database token.
 
 ## OSRM
-`osrm/prep-data.py` builds the car, bicycle and foot graphs from
+`osrm/prep-osrm.py` builds the car, bicycle and foot graphs from
 `data/osrm/cropped_network.osm.pbf` (cut to a boundary with osmium; see
 nick-fournier/GraphSeq `scripts/helpers/prepare_osrm.py`). It uses the OSRM image
 from `compose.yaml` and skips profiles already built with it, so bumping the image
@@ -25,7 +25,7 @@ there and re-running rebuilds everything. A full build takes hours and a lot of
 memory: stop MOTIS first and run it in tmux.
 ```bash
 docker compose stop motis
-cd osrm && python3 prep-data.py          # --profiles car foot, --force-rebuild, --source <pbf>
+cd osrm && python3 prep-osrm.py          # --profiles car foot, --force-rebuild, --source <pbf>
 cd .. && docker compose up -d
 curl "http://localhost:5000/route/v1/driving/-122.42,37.77;-122.41,37.78?overview=false"
 ```
@@ -38,7 +38,7 @@ aliases; see `osrm/nginx.conf`).
 MOTIS memory-maps its dataset (`cista::mmap`), so serve-time RAM is the *working
 set*, not the whole dataset. The one feature that must be fully resident — the
 address/geocoding index (`adr`) — is the memory hog (~25GB on a full planet), so
-`prep-data.py` writes a `config.yml` with **`geocoding: false`,
+`prep-motis.py` writes a `config.yml` with **`geocoding: false`,
 `reverse_geocoding: false`, and tiles off**, keeping **`street_routing: true`**.
 thinkbox is a pure routing backend: clients send coordinates, not place names.
 
@@ -50,7 +50,7 @@ Multi-GB and **not** in git (root `.gitignore` covers `**/data/`). Reproducible:
 
 ```bash
 cp example.env .env             # fill in MOBILITY_DB_REFRESH_TOKEN
-cd motis && uv run prep-data.py   # download US GTFS + OSM, sanitize, import
+cd motis && uv run prep-motis.py   # download US GTFS + OSM, sanitize, import
 ```
 The prep tool's deps are managed by [uv](https://docs.astral.sh/uv/)
 (`pyproject.toml` + `uv.lock`); `uv run` creates the project venv on first use,
@@ -61,7 +61,7 @@ window, default 30), `--date YYYY-MM-DD` (reference week), `--force-download`,
 `--force-rebuild`. A fast pre-import scan verifies every staged feed has a valid
 `agency_timezone` before the import starts.
 
-`prep-data.py` discovers every US GTFS feed from the
+`prep-motis.py` discovers every US GTFS feed from the
 [Mobility Database](https://mobilitydatabase.org) (free token), downloads the
 Geofabrik `us-latest.osm.pbf`, sanitizes feeds (flatten nested zips, normalize
 CSV whitespace/BOM/CRLF, drop feeds missing required tables), shifts expired
