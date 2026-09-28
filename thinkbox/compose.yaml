@@ -6,7 +6,7 @@ name: thinkbox
 #
 # Data lives under ./data (gitignored), one folder per service:
 #   ./data/motis   built by motis/prep-data.py (`motis import`)
-#   ./data/osrm    built by osrm/prep-data.sh (extract -> partition -> customize)
+#   ./data/osrm    built by osrm/prep-data.py (extract -> partition -> customize)
 # This stack only serves the results.
 
 services:

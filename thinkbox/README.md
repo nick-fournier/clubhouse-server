@@ -12,23 +12,25 @@ than dataset size.
 ## Layout
 - `compose.yaml` — one stack serving both (MOTIS + `osrm-nginx` + one backend per profile).
 - `motis/` — `prep-data.py` (+ uv project) builds `data/motis`.
-- `osrm/` — `prep-data.sh` builds `data/osrm/<profile>`; `nginx.conf` routes by profile.
+- `osrm/` — `prep-data.py` builds `data/osrm/<profile>`; `nginx.conf` routes by profile.
 - `data/` — gitignored; `data/motis` and `data/osrm`.
 - `example.env` — copy to `.env`; holds the Mobility Database token.
 
 ## OSRM
+`osrm/prep-data.py` builds the car, bicycle and foot graphs from
+`data/osrm/cropped_network.osm.pbf` (cut to a boundary with osmium; see
+nick-fournier/GraphSeq `scripts/helpers/prepare_osrm.py`). It uses the OSRM image
+from `compose.yaml` and skips profiles already built with it, so bumping the image
+there and re-running rebuilds everything. A full build takes hours and a lot of
+memory: stop MOTIS first and run it in tmux.
 ```bash
-# data/osrm/cropped_network.osm.pbf is the source extract (cut to a boundary with
-# osmium; see nick-fournier/GraphSeq scripts/helpers/prepare_osrm.py)
-for p in car bicycle foot; do
-  osrm/prep-data.sh $p "$PWD/data/osrm/cropped_network.osm.pbf" $p
-done
-docker compose up -d
+docker compose stop motis
+cd osrm && python3 prep-data.py          # --profiles car foot, --force-rebuild, --source <pbf>
+cd .. && docker compose up -d
 curl "http://localhost:5000/route/v1/driving/-122.42,37.77;-122.41,37.78?overview=false"
 ```
 `/route/v1/<profile>/...` is routed by keyword (`driving`, `cycling`, `walking`, and
-aliases; see `osrm/nginx.conf`). The OSRM version is pinned in both `compose.yaml`
-and `osrm/prep-data.sh`: graphs must be rebuilt when it changes.
+aliases; see `osrm/nginx.conf`).
 
 ## MOTIS
 

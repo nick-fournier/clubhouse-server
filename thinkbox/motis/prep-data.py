@@ -8,7 +8,7 @@
 # ///
 """prep-data.py — build the MOTIS dataset under ./data for the thinkbox server.
 
-The analog of ../osrm/prep-data.sh, but for MOTIS instead of OSRM, and covering
+The analog of ../osrm/prep-data.py, but for MOTIS instead of OSRM, and covering
 ALL of the US. It makes the (multi-GB, gitignored) MOTIS import REPRODUCIBLE:
 
   1. download — discover + fetch US GTFS feeds (Mobility Database) and the
