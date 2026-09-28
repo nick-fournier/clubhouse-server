@@ -5,7 +5,7 @@
 # ///
 """prep-osrm.py — build the OSRM routing graphs under thinkbox/data/osrm.
 
-The analog of ../motis/prep-motis.py, for OSRM. It makes the (multi-GB,
+The analog of prep-motis.py, for OSRM. It makes the (multi-GB,
 gitignored) graphs REPRODUCIBLE from one source extract and the stock profiles:
 
   for each profile (car, bicycle, foot):
@@ -52,8 +52,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 HERE = Path(__file__).resolve().parent
-COMPOSE_FILE = HERE.parent / "compose.yaml"
-DATA_DIR = Path(os.environ.get("OSRM_DATA_DIR", HERE.parent / "data" / "osrm")).resolve()
+COMPOSE_FILE = HERE / "compose.yaml"
+DATA_DIR = Path(os.environ.get("OSRM_DATA_DIR", HERE / "data" / "osrm")).resolve()
 DEFAULT_SOURCE = DATA_DIR / "cropped_network.osm.pbf"
 
 # Stock profiles shipped in the OSRM image.

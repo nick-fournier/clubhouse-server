@@ -5,8 +5,8 @@ name: thinkbox
 # whole dataset, and mem_limit is a ceiling, not a reservation.
 #
 # Data lives under ./data (gitignored), one folder per service:
-#   ./data/motis   built by motis/prep-motis.py (`motis import`)
-#   ./data/osrm    built by osrm/prep-osrm.py (extract -> partition -> customize)
+#   ./data/motis   built by prep-motis.py (`motis import`)
+#   ./data/osrm    built by prep-osrm.py (extract -> partition -> customize)
 # This stack only serves the results.
 
 services:
@@ -27,13 +27,13 @@ services:
     mem_limit: 14G
     restart: unless-stopped
 
-  # Routes /route/v1/<profile>/... to the matching backend (osrm/nginx.conf).
+  # Routes /route/v1/<profile>/... to the matching backend (osrm-nginx.conf).
   osrm-nginx:
     image: nginx:1.27-alpine
     container_name: osrm-nginx
     restart: unless-stopped
     volumes:
-      - ./osrm/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./osrm-nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
       - "5000:5000"
     depends_on:
