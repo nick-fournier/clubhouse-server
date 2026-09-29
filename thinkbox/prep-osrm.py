@@ -123,6 +123,19 @@ def fetch_source(source: str) -> Path:
     return path
 
 
+def resource_limits() -> tuple[int, int]:
+    """(threads, memory bytes) for build containers, leaving the host usable.
+
+    One core is left free and the container is capped at 90% of the memory
+    available at start, so sshd and friends keep running even when the build
+    spills into swap (the container may still use host swap past the cap).
+    """
+    threads = max(1, (os.cpu_count() or 2) - 1)
+    meminfo = Path("/proc/meminfo").read_text()
+    available_kb = int(re.search(r"MemAvailable:\s+(\d+) kB", meminfo).group(1))
+    return threads, int(available_kb * 1024 * 0.9)
+
+
 def is_built(profile_dir: Path, image: str) -> bool:
     stamp = profile_dir / STAMP_FILE
     return stamp.is_file() and stamp.read_text().strip() == image
@@ -143,16 +156,20 @@ def build_profile(profile: str, source: Path, image: str) -> None:
     except OSError:
         shutil.copy2(source, pbf)
 
+    threads, memory = resource_limits()
     osrm = f"/data/{profile}/{NETWORK_NAME}.osrm"
     steps = [
-        ["osrm-extract", "-p", f"/opt/{profile}.lua", f"/data/{profile}/{pbf.name}"],
-        ["osrm-contract", osrm],
+        ["osrm-extract", "-t", str(threads), "-p", f"/opt/{profile}.lua", f"/data/{profile}/{pbf.name}"],
+        ["osrm-contract", "-t", str(threads), osrm],
     ]
     for step in steps:
-        logger.info("[%s] %s", profile, " ".join(step))
+        logger.info("[%s] %s (cpus %d, memory cap %.1f GiB)", profile, " ".join(step),
+                    threads, memory / 2**30)
         started = time.monotonic()
         subprocess.run(
-            ["docker", "run", "--rm", "-v", f"{DATA_DIR}:/data", image, *step],
+            ["docker", "run", "--rm",
+             "--cpus", str(threads), "--memory", str(memory), "--memory-swap", "-1",
+             "-v", f"{DATA_DIR}:/data", image, *step],
             check=True,
         )
         logger.info("[%s] %s done in %.0f min", profile, step[0], (time.monotonic() - started) / 60)
