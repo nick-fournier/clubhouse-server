@@ -9,18 +9,25 @@ The analog of prep-motis.py, for OSRM. It makes the (multi-GB,
 gitignored) graphs REPRODUCIBLE from one source extract and the stock profiles:
 
   for each profile (car, bicycle, foot):
-    osrm-extract -> osrm-partition -> osrm-customize   (MLD pipeline, via Docker)
-    into data/osrm/<profile>/cropped_network.osrm, which compose.yaml serves.
+    osrm-extract -> osrm-contract   (CH pipeline, via Docker)
+    into data/osrm/<profile>/network.osrm, which compose.yaml serves.
+
+We build **Contraction Hierarchies** (CH), not MLD: this backend never applies
+live traffic updates, so CH's faster queries win and we skip partition/customize.
+CH's cost is a heavier `osrm-contract` step — see "Memory" below.
 
 The OSRM image is read from compose.yaml, so graphs are always built with the
 version the server runs. A profile already built with that image is skipped;
 changing the image in compose.yaml makes the next run rebuild it.
 
-The default source, data/osrm/cropped_network.osm.pbf, was cut to a boundary
-with osmium (see nick-fournier/GraphSeq scripts/helpers/prepare_osrm.py).
+The default source is the whole-US Geofabrik extract (~11GB download). The output
+is named `network.osrm` regardless of the source file, so compose.yaml serves a
+stable path no matter what `--source` you build from.
 
-Stdlib only. Builds are memory-heavy: stop MOTIS first on the 16GB box, and run
-inside tmux (or nohup) since a full build takes hours.
+Memory: at whole-US scale `osrm-contract` peaks well above 16GB, so build this on
+a bigger box (the graphs are version-locked but machine-portable — rsync
+data/osrm/<profile>/ to thinkbox and serve there mmap'd). Run inside tmux/nohup;
+a full build takes hours.
 
 Usage:
   python3 prep-osrm.py                          # build any missing/outdated profile
@@ -35,6 +42,7 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import os
 import re
@@ -43,7 +51,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from urllib.request import urlretrieve
+from urllib.request import urlopen, urlretrieve
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,10 +62,16 @@ logger = logging.getLogger(__name__)
 HERE = Path(__file__).resolve().parent
 COMPOSE_FILE = HERE / "compose.yaml"
 DATA_DIR = Path(os.environ.get("OSRM_DATA_DIR", HERE / "data" / "osrm")).resolve()
-DEFAULT_SOURCE = DATA_DIR / "cropped_network.osm.pbf"
+
+# Whole-US road network (same extract prep-motis.py uses for street routing).
+DEFAULT_SOURCE = "https://download.geofabrik.de/north-america/us-latest.osm.pbf"
 
 # Stock profiles shipped in the OSRM image.
 PROFILES = ["car", "bicycle", "foot"]
+
+# Source is linked to this stable name inside each profile dir, so the built
+# graph is always network.osrm no matter what the source file is called.
+NETWORK_NAME = "network"
 
 # Written into each profile folder after a successful build; holds the image used.
 STAMP_FILE = ".built-with"
@@ -71,6 +85,25 @@ def osrm_image() -> str:
     return match.group(1)
 
 
+def verify_md5(path: Path, url: str) -> None:
+    """Best-effort integrity check against Geofabrik's <url>.md5 sidecar."""
+    try:
+        with urlopen(url + ".md5", timeout=30) as resp:
+            expected = resp.read().decode().split()[0]
+    except Exception as e:  # no sidecar / offline — skip rather than block the build
+        logger.warning("Could not fetch %s.md5 (%s); skipping checksum", url, e)
+        return
+    logger.info("Verifying md5 of %s", path.name)
+    h = hashlib.md5()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    if h.hexdigest() != expected:
+        sys.exit(f"md5 mismatch for {path} (got {h.hexdigest()}, expected {expected}); "
+                 "delete it and re-run to re-download")
+    logger.info("md5 OK")
+
+
 def fetch_source(source: str) -> Path:
     """Return a local path to the extract, downloading it into DATA_DIR if a URL."""
     if not source.startswith(("http://", "https://")):
@@ -81,9 +114,12 @@ def fetch_source(source: str) -> Path:
 
     path = DATA_DIR / Path(source.split("?")[0]).name
     if not path.is_file():
-        logger.info("Downloading %s", source)
+        logger.info("Downloading %s (this is large; ~11GB for whole-US)", source)
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        urlretrieve(source, path)
+        tmp = path.with_suffix(path.suffix + ".part")
+        urlretrieve(source, tmp)
+        tmp.rename(path)  # only publish a complete download
+        verify_md5(path, source)
     return path
 
 
@@ -97,20 +133,20 @@ def build_profile(profile: str, source: Path, image: str) -> None:
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / STAMP_FILE).unlink(missing_ok=True)
 
-    # Hard-link the extract into the profile folder (no extra disk) so this
-    # profile's .osrm files land next to it, separate from the other profiles.
-    pbf = profile_dir / source.name
+    # Hard-link the extract into the profile folder under a stable name (no extra
+    # disk) so this profile's .osrm files land next to it as network.osrm*,
+    # separate from the other profiles and independent of the source filename.
+    pbf = profile_dir / f"{NETWORK_NAME}.osm.pbf"
     pbf.unlink(missing_ok=True)
     try:
         os.link(source, pbf)
     except OSError:
         shutil.copy2(source, pbf)
 
-    osrm = f"/data/{profile}/{pbf.name.removesuffix('.osm.pbf')}.osrm"
+    osrm = f"/data/{profile}/{NETWORK_NAME}.osrm"
     steps = [
         ["osrm-extract", "-p", f"/opt/{profile}.lua", f"/data/{profile}/{pbf.name}"],
-        ["osrm-partition", osrm],
-        ["osrm-customize", osrm],
+        ["osrm-contract", osrm],
     ]
     for step in steps:
         logger.info("[%s] %s", profile, " ".join(step))
@@ -131,8 +167,8 @@ def main() -> None:
     )
     parser.add_argument("--profiles", nargs="+", choices=PROFILES, default=PROFILES,
                         help="profiles to build (default: all)")
-    parser.add_argument("--source", default=str(DEFAULT_SOURCE),
-                        help="source .osm.pbf, local path or URL (default: %(default)s)")
+    parser.add_argument("--source", default=DEFAULT_SOURCE,
+                        help="source .osm.pbf, local path or URL (default: whole-US Geofabrik)")
     parser.add_argument("--force-rebuild", action="store_true",
                         help="rebuild even if a profile is already built with this image")
     args = parser.parse_args()

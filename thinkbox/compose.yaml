@@ -6,7 +6,7 @@ name: thinkbox
 #
 # Data lives under ./data (gitignored), one folder per service:
 #   ./data/motis   built by prep-motis.py (`motis import`)
-#   ./data/osrm    built by prep-osrm.py (extract -> partition -> customize)
+#   ./data/osrm    built by prep-osrm.py (extract -> contract, CH)
 # This stack only serves the results.
 
 services:
@@ -45,7 +45,7 @@ services:
     image: ghcr.io/project-osrm/osrm-backend:v26.9.0-debian
     container_name: osrm-backend-car
     restart: unless-stopped
-    command: osrm-routed -p 5001 --mmap --threads 4 --algorithm mld --max-matching-size 10000 /data/car/cropped_network.osrm
+    command: osrm-routed -p 5001 --mmap --threads 4 --algorithm ch --max-matching-size 10000 /data/car/network.osrm
     volumes:
       - ./data/osrm:/data:ro
     ports:
@@ -56,7 +56,7 @@ services:
     image: ghcr.io/project-osrm/osrm-backend:v26.9.0-debian
     container_name: osrm-backend-bicycle
     restart: unless-stopped
-    command: osrm-routed -p 5002 --mmap --threads 4 --algorithm mld --max-matching-size 10000 /data/bicycle/cropped_network.osrm
+    command: osrm-routed -p 5002 --mmap --threads 4 --algorithm ch --max-matching-size 10000 /data/bicycle/network.osrm
     volumes:
       - ./data/osrm:/data:ro
     ports:
@@ -67,7 +67,7 @@ services:
     image: ghcr.io/project-osrm/osrm-backend:v26.9.0-debian
     container_name: osrm-backend-foot
     restart: unless-stopped
-    command: osrm-routed -p 5003 --mmap --threads 4 --algorithm mld --max-matching-size 10000 /data/foot/cropped_network.osrm
+    command: osrm-routed -p 5003 --mmap --threads 4 --algorithm ch --max-matching-size 10000 /data/foot/network.osrm
     volumes:
       - ./data/osrm:/data:ro
     ports:

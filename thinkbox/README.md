@@ -4,7 +4,7 @@ Runs both routing engines, reachable over Tailscale only (not public):
 - [MOTIS](https://github.com/motis-project/motis) on `:8080`: multimodal transit
   routing over **all of the US** (GTFS timetables + OpenStreetMap street/walk routing).
 - [OSRM](https://github.com/Project-OSRM/osrm-backend) on `:5000`: car / bicycle /
-  foot road routing on the `cropped_network` extract, stock profiles.
+  foot road routing over **all of the US**, stock profiles, Contraction Hierarchies.
 
 Both memory-map their data, so they share the 16GB box on working set rather
 than dataset size.
@@ -18,20 +18,33 @@ than dataset size.
 - `example.env` — copy to `.env`; holds the Mobility Database token.
 
 ## OSRM
-`prep-osrm.py` builds the car, bicycle and foot graphs from
-`data/osrm/cropped_network.osm.pbf` (cut to a boundary with osmium; see
-nick-fournier/GraphSeq `scripts/helpers/prepare_osrm.py`). It uses the OSRM image
+`prep-osrm.py` builds the car, bicycle and foot graphs with the **Contraction
+Hierarchies** pipeline (`osrm-extract -> osrm-contract`). It defaults to the
+whole-US Geofabrik extract (`north-america/us-latest.osm.pbf`, ~11GB, downloaded
+into `data/osrm/`), and names the output `data/osrm/<profile>/network.osrm`
+regardless of the source. We use CH rather than MLD because this backend never
+applies live traffic updates, so CH's faster queries win. It reads the OSRM image
 from `compose.yaml` and skips profiles already built with it, so bumping the image
-there and re-running rebuilds everything. A full build takes hours and a lot of
-memory: stop MOTIS first and run it in tmux.
+there and re-running rebuilds everything.
+
+**Build it on a bigger box, not thinkbox.** At whole-US scale `osrm-contract`
+peaks well above 16GB — on the 16GB box it thrashes swap for days and can hang the
+machine. OSRM graphs are version-locked but machine-portable, so build on a
+larger host (with the same repo/image) and copy the result over:
 ```bash
-docker compose stop motis
+# on the build box (e.g. a 48GB machine), same repo + OSRM image:
 python3 prep-osrm.py          # --profiles car foot, --force-rebuild, --source <pbf>
+# then ship the graphs to thinkbox and serve them mmap'd:
+rsync -a data/osrm/ thinkbox:~/clubhouse-server/thinkbox/data/osrm/
+```
+On thinkbox:
+```bash
 docker compose up -d
 curl "http://localhost:5000/route/v1/driving/-122.42,37.77;-122.41,37.78?overview=false"
 ```
-`/route/v1/<profile>/...` is routed by keyword (`driving`, `cycling`, `walking`, and
-aliases; see `osrm-nginx.conf`).
+Serving is cheap: each backend memory-maps its `.osrm.hsgr`, so serve-time RAM is
+the query working set, not the dataset. `/route/v1/<profile>/...` is routed by
+keyword (`driving`, `cycling`, `walking`, and aliases; see `osrm-nginx.conf`).
 
 ## MOTIS
 
