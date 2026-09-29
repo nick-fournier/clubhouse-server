@@ -1,6 +1,6 @@
 # Public hostname -> service. Every public URL in the homelab is listed here.
-# DNS: a proxied wildcard CNAME (* -> <TUNNEL_ID>.cfargotunnel.com) sends every
-# subdomain here, so adding a hostname needs no DNS change.
+# DNS: each hostname needs a proxied CNAME -> <TUNNEL_ID>.cfargotunnel.com in Cloudflare
+# (it shows as type "Tunnel" there).
 # cloudflared only reads this file at startup: `docker compose restart tunnel`
 # after editing it.
 # Old launchpad paths (/fns/, /bvi-itinerary/, ...) redirect in home/nginx.conf:
@@ -15,5 +15,9 @@ ingress:
 
   - hostname: "bvi.nicholasfournier.com"
     service: http://bvi:80
+
+  # Portfolio lab dashboard, served from orange over Tailscale.
+  - hostname: "portfolio.nicholasfournier.com"
+    service: http://orange:8100
 
   - service: http_status:404

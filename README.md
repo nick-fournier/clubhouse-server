@@ -10,20 +10,22 @@ hardware, so an orchestrator's scheduler buys nothing here. See
 | Folder | Host | Arch / NIC | Runs |
 |--------|------|-----------|------|
 | `razz/` | razz (Pi4) | arm64 / 1G | cloudflared tunnel, static sites (`home`, `fns`, `bvi`) |
-| `orange/` | orange (Pi5) | arm64 / 1G | *being repurposed* — compute worker for the portfolio lab |
+| `orange/` | orange (Pi5) | arm64 / 1G | Portfolio lab: `portfolio-web` (:8100) + `portfolio-jobs` scheduler |
 | `thinkbox/` | thinkbox (M72e) | amd64 / 2.5G | Routing: MOTIS (transit, `:8080`) + OSRM (car/bike/foot, `:5000`) |
 | `cube/` | cube (Unraid) | amd64 / 2×2.5G | Postgres (+ Plex, dev/gaming VM, Unraid-managed) |
 
 Cross-host traffic uses **Tailscale MagicDNS** hostnames (`razz4`, `orange`,
 `cube`), not Docker service names. Public traffic enters only through the
 cloudflared tunnel on razz, and **`razz/tunnel.yml` is the list of every public
-hostname**. A proxied wildcard DNS record (`*` → the tunnel) sends every
-subdomain to the tunnel, so adding a hostname needs no DNS change. After
-editing `tunnel.yml`, run `docker compose restart tunnel`.
+hostname**. Each hostname also needs a proxied CNAME to the tunnel
+(`<TUNNEL_ID>.cfargotunnel.com`) in Cloudflare DNS; it shows up there as type
+"Tunnel". After editing `tunnel.yml`, run `docker compose restart tunnel`.
 - `launchpad.nicholasfournier.com` → razz `home` (index page, plus redirects for
   the old Django launchpad paths in `razz/home/nginx.conf`)
 - `fns.nicholasfournier.com` → razz `fns` (image from `nick-fournier/sbyc_course_app`)
 - `bvi.nicholasfournier.com` → razz `bvi` (image from `nick-fournier/bvi_itinerary`)
+- `portfolio.nicholasfournier.com` → `orange:8100` (portfolio lab dashboard, image from
+  `nick-fournier/portfolio-lab`)
 
 MOTIS and OSRM run on thinkbox and are reachable over Tailscale only (see `thinkbox/README.md`).
 
