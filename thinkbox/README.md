@@ -4,7 +4,8 @@ Runs both routing engines, reachable over Tailscale only (not public):
 - [MOTIS](https://github.com/motis-project/motis) on `:8080`: multimodal transit
   routing over **all of the US** (GTFS timetables + OpenStreetMap street/walk routing).
 - [OSRM](https://github.com/Project-OSRM/osrm-backend) on `:5000`: car / bicycle /
-  foot road routing over **all of the US**, stock profiles, Contraction Hierarchies.
+  foot road routing over the **US West** (Geofabrik `us-west`), stock profiles,
+  Contraction Hierarchies.
 
 Both memory-map their data, so they share the 16GB box on working set rather
 than dataset size.
@@ -20,20 +21,23 @@ than dataset size.
 ## OSRM
 `prep-osrm.py` builds the car, bicycle and foot graphs with the **Contraction
 Hierarchies** pipeline (`osrm-extract -> osrm-contract`). It defaults to the
-whole-US Geofabrik extract (`north-america/us-latest.osm.pbf`, ~11GB, downloaded
-into `data/osrm/`), and names the output `data/osrm/<profile>/network.osrm`
+Geofabrik US West extract (`north-america/us-west-latest.osm.pbf`, ~3-4GB,
+downloaded into `data/osrm/`), and names the output `data/osrm/<profile>/network.osrm`
 regardless of the source. We use CH rather than MLD because this backend never
 applies live traffic updates, so CH's faster queries win. It reads the OSRM image
 from `compose.yaml` and skips profiles already built with it, so bumping the image
 there and re-running rebuilds everything.
 
-**Build it on a bigger box, not thinkbox.** At whole-US scale `osrm-contract`
-peaks well above 16GB — on the 16GB box it thrashes swap for days and can hang the
-machine. OSRM graphs are version-locked but machine-portable, so build on a
+**Build it on a bigger box, not thinkbox.** Extract and contract peak well above
+16GB — on the 16GB box they thrash swap for days and can hang the machine.
+Whole-US is out of reach even on the 48GB box: car extract alone needed >100GB
+of RAM + swap and slowed to ~2% CPU while swapping, so we serve US West. OSRM graphs are version-locked but machine-portable, so build on a
 larger host (with the same repo/image) and copy the result over:
 ```bash
 # on the build box (e.g. a 48GB machine), same repo + OSRM image:
-python3 prep-osrm.py          # --profiles car foot, --force-rebuild, --source <pbf>
+# optional soft memory cap (see prep-osrm.py "Memory"):
+#   sudo cp osrm-build.slice /etc/systemd/system/ && sudo systemctl daemon-reload
+uv run prep-osrm.py           # --profiles car foot, --force-rebuild, --source <pbf>
 # then ship the graphs to thinkbox and serve them mmap'd:
 rsync -a data/osrm/ thinkbox:~/clubhouse-server/thinkbox/data/osrm/
 ```

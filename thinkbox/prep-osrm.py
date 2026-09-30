@@ -20,18 +20,21 @@ The OSRM image is read from compose.yaml, so graphs are always built with the
 version the server runs. A profile already built with that image is skipped;
 changing the image in compose.yaml makes the next run rebuild it.
 
-The default source is the whole-US Geofabrik extract (~11GB download). The output
+The default source is the Geofabrik US West extract (~3-4GB download): whole-US
+needs >100GB of RAM + swap to extract (see "Memory" below), and at that size
+the build thrashes swap for days on a 48GB box. The output
 is named `network.osrm` regardless of the source file, so compose.yaml serves a
 stable path no matter what `--source` you build from.
 
-Memory: at whole-US scale `osrm-contract` peaks well above 16GB, so build this on
+Memory: even for US West, extract and contract peak well above 16GB, so build on
 a bigger box (the graphs are version-locked but machine-portable — rsync
 data/osrm/<profile>/ to thinkbox and serve there mmap'd). Run inside tmux/nohup;
 a full build takes hours.
 
 Memory (measured on cube, 48GB RAM): whole-US car osrm-extract needs >100GB of
-RAM + swap (it was at 41.6GiB RAM + 55.7GiB swap when 64GB of swap ran out), so
-give the build box enough swap. If the osrm-build.slice unit (next to this
+RAM + swap (41.6GiB RAM + 55.7GiB swap and still growing), and with most of that
+in swap it slowed to ~2% CPU, so steps took ~20-50x longer. That is why the
+default is US West. If the osrm-build.slice unit (next to this
 script) is installed, builds run under it: MemoryHigh makes the build spill to
 swap past ~40GB instead of starving the host, and never kills it. Without the
 slice, memory is uncapped. Either way the container gets oom_score_adj 1000, so
@@ -73,8 +76,9 @@ HERE = Path(__file__).resolve().parent
 COMPOSE_FILE = HERE / "compose.yaml"
 DATA_DIR = Path(os.environ.get("OSRM_DATA_DIR", HERE / "data" / "osrm")).resolve()
 
-# Whole-US road network (same extract prep-motis.py uses for street routing).
-DEFAULT_SOURCE = "https://download.geofabrik.de/north-america/us-latest.osm.pbf"
+# US West road network. Whole-US (north-america/us-latest.osm.pbf, the extract
+# prep-motis.py uses) is too big to build on a 48GB box; see "Memory" above.
+DEFAULT_SOURCE = "https://download.geofabrik.de/north-america/us-west-latest.osm.pbf"
 
 # Stock profiles shipped in the OSRM image.
 PROFILES = ["car", "bicycle", "foot"]
@@ -215,7 +219,7 @@ def main() -> None:
     parser.add_argument("--profiles", nargs="+", choices=PROFILES, default=PROFILES,
                         help="profiles to build (default: all)")
     parser.add_argument("--source", default=DEFAULT_SOURCE,
-                        help="source .osm.pbf, local path or URL (default: whole-US Geofabrik)")
+                        help="source .osm.pbf, local path or URL (default: Geofabrik US West)")
     parser.add_argument("--force-rebuild", action="store_true",
                         help="rebuild even if a profile is already built with this image")
     parser.add_argument("--skip-extract", action="store_true",
