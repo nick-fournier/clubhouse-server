@@ -31,15 +31,22 @@ there and re-running rebuilds everything.
 **Build it on a bigger box, not thinkbox.** Extract and contract peak well above
 16GB — on the 16GB box they thrash swap for days and can hang the machine.
 Whole-US is out of reach even on the 48GB box: car extract alone needed >100GB
-of RAM + swap and slowed to ~2% CPU while swapping, so we serve US West. OSRM graphs are version-locked but machine-portable, so build on a
-larger host (with the same repo/image) and copy the result over:
+of RAM + swap and slowed to ~2% CPU while swapping, so we serve US West. OSRM
+graphs are version-locked but machine-portable, so build on a larger host (with
+the same repo/image) and copy the result over:
 ```bash
 # on the build box (e.g. a 48GB machine), same repo + OSRM image:
 # optional soft memory cap (see prep-osrm.py "Memory"):
 #   sudo cp osrm-build.slice /etc/systemd/system/ && sudo systemctl daemon-reload
-uv run prep-osrm.py           # --profiles car foot, --force-rebuild, --source <pbf>
-# then ship the graphs to thinkbox and serve them mmap'd:
-rsync -a data/osrm/ thinkbox:~/clubhouse-server/thinkbox/data/osrm/
+uv run prep-osrm.py 2>&1 | tee build.log   # --profiles car foot, --force-rebuild, --source <pbf>
+# the build containers run as root and leave some files root-only (0700):
+sudo chown -R "$USER": data/osrm/{car,bicycle,foot}
+# then ship the graphs to thinkbox (skipping each profile's source .pbf link)
+# and serve them mmap'd:
+for p in car bicycle foot; do
+  rsync -a --info=progress2 --exclude network.osm.pbf \
+    data/osrm/$p/ thinkbox:~/clubhouse-server/thinkbox/data/osrm/$p/
+done
 ```
 On thinkbox:
 ```bash

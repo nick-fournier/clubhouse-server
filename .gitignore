@@ -9,3 +9,6 @@
 # Python / uv (thinkbox/motis prep tooling) — env is reproducible from uv.lock
 .venv/
 __pycache__/
+
+# prep-script logs (`... 2>&1 | tee build.log`)
+build.log
