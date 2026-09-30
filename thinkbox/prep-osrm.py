@@ -123,17 +123,16 @@ def fetch_source(source: str) -> Path:
     return path
 
 
-def resource_limits() -> tuple[int, int]:
-    """(threads, memory bytes) for build containers, leaving the host usable.
+def build_threads() -> int:
+    """Threads for build containers: all cores but one, so the host stays responsive.
 
-    One core is left free and the container is capped at 90% of the memory
-    available at start, so sshd and friends keep running even when the build
-    spills into swap (the container may still use host swap past the cap).
+    Memory is deliberately NOT capped: a cgroup memory limit gets the build
+    OOM-killed at the cap instead of spilling into host swap (whole-US
+    osrm-extract died at a 41.6 GiB cap on a 48GB + 64GB-swap box). Instead the
+    container gets oom_score_adj 1000, so if the host itself runs out, the
+    kernel kills the build rather than sshd.
     """
-    threads = max(1, (os.cpu_count() or 2) - 1)
-    meminfo = Path("/proc/meminfo").read_text()
-    available_kb = int(re.search(r"MemAvailable:\s+(\d+) kB", meminfo).group(1))
-    return threads, int(available_kb * 1024 * 0.9)
+    return max(1, (os.cpu_count() or 2) - 1)
 
 
 def is_built(profile_dir: Path, image: str) -> bool:
@@ -156,19 +155,18 @@ def build_profile(profile: str, source: Path, image: str) -> None:
     except OSError:
         shutil.copy2(source, pbf)
 
-    threads, memory = resource_limits()
+    threads = build_threads()
     osrm = f"/data/{profile}/{NETWORK_NAME}.osrm"
     steps = [
         ["osrm-extract", "-t", str(threads), "-p", f"/opt/{profile}.lua", f"/data/{profile}/{pbf.name}"],
         ["osrm-contract", "-t", str(threads), osrm],
     ]
     for step in steps:
-        logger.info("[%s] %s (cpus %d, memory cap %.1f GiB)", profile, " ".join(step),
-                    threads, memory / 2**30)
+        logger.info("[%s] %s (cpus %d)", profile, " ".join(step), threads)
         started = time.monotonic()
         subprocess.run(
             ["docker", "run", "--rm",
-             "--cpus", str(threads), "--memory", str(memory), "--memory-swap", "-1",
+             "--cpus", str(threads), "--oom-score-adj", "1000",
              "-v", f"{DATA_DIR}:/data", image, *step],
             check=True,
         )
