@@ -29,11 +29,21 @@ a bigger box (the graphs are version-locked but machine-portable — rsync
 data/osrm/<profile>/ to thinkbox and serve there mmap'd). Run inside tmux/nohup;
 a full build takes hours.
 
+Memory (measured on cube, 48GB RAM): whole-US car osrm-extract needs >100GB of
+RAM + swap (it was at 41.6GiB RAM + 55.7GiB swap when 64GB of swap ran out), so
+give the build box enough swap. If the osrm-build.slice unit (next to this
+script) is installed, builds run under it: MemoryHigh makes the build spill to
+swap past ~40GB instead of starving the host, and never kills it. Without the
+slice, memory is uncapped. Either way the container gets oom_score_adj 1000, so
+if RAM + swap really run out the kernel kills the build, not sshd. Install with:
+  sudo cp osrm-build.slice /etc/systemd/system/ && sudo systemctl daemon-reload
+
 Usage:
   python3 prep-osrm.py                          # build any missing/outdated profile
   python3 prep-osrm.py --profiles car foot      # just these
   python3 prep-osrm.py --force-rebuild          # rebuild even if up to date
   python3 prep-osrm.py --source <path-or-url>   # different .osm.pbf extract
+  python3 prep-osrm.py --profiles car --skip-extract  # contract an existing extract
 
 Environment:
   OSRM_DATA_DIR  — output dir (default thinkbox/data/osrm)
@@ -75,6 +85,13 @@ NETWORK_NAME = "network"
 
 # Written into each profile folder after a successful build; holds the image used.
 STAMP_FILE = ".built-with"
+
+# systemd slice that soft-caps build memory (see "Memory" above); used if installed.
+BUILD_SLICE = "osrm-build.slice"
+
+# Fixed container name: a second concurrent build fails fast instead of racing
+# the first one for RAM + swap.
+CONTAINER_NAME = "osrm-build"
 
 
 def osrm_image() -> str:
@@ -124,15 +141,20 @@ def fetch_source(source: str) -> Path:
 
 
 def build_threads() -> int:
-    """Threads for build containers: all cores but one, so the host stays responsive.
-
-    Memory is deliberately NOT capped: a cgroup memory limit gets the build
-    OOM-killed at the cap instead of spilling into host swap (whole-US
-    osrm-extract died at a 41.6 GiB cap on a 48GB + 64GB-swap box). Instead the
-    container gets oom_score_adj 1000, so if the host itself runs out, the
-    kernel kills the build rather than sshd.
-    """
+    """Threads for build containers: all cores but one, so the host stays responsive."""
     return max(1, (os.cpu_count() or 2) - 1)
+
+
+def build_slice_installed() -> bool:
+    """True if BUILD_SLICE has a unit file (systemd would otherwise create an unlimited one)."""
+    try:
+        out = subprocess.run(
+            ["systemctl", "show", "-p", "FragmentPath", "--value", BUILD_SLICE],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return bool(out)
 
 
 def is_built(profile_dir: Path, image: str) -> bool:
@@ -140,7 +162,7 @@ def is_built(profile_dir: Path, image: str) -> bool:
     return stamp.is_file() and stamp.read_text().strip() == image
 
 
-def build_profile(profile: str, source: Path, image: str) -> None:
+def build_profile(profile: str, source: Path, image: str, skip_extract: bool = False) -> None:
     profile_dir = DATA_DIR / profile
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / STAMP_FILE).unlink(missing_ok=True)
@@ -161,12 +183,22 @@ def build_profile(profile: str, source: Path, image: str) -> None:
         ["osrm-extract", "-t", str(threads), "-p", f"/opt/{profile}.lua", f"/data/{profile}/{pbf.name}"],
         ["osrm-contract", "-t", str(threads), osrm],
     ]
+    if skip_extract:
+        steps = steps[1:]
+    # --init: osrm-* as PID 1 ignores SIGINT/SIGTERM, so without it Ctrl-C kills
+    # the docker client but leaves the build running as an orphan.
+    run_opts = ["--rm", "--init", "--name", CONTAINER_NAME,
+                "--cpus", str(threads), "--oom-score-adj", "1000"]
+    if build_slice_installed():
+        run_opts += ["--cgroup-parent", BUILD_SLICE]
+        logger.info("[%s] running under %s (soft memory cap)", profile, BUILD_SLICE)
+    else:
+        logger.info("[%s] %s not installed; memory uncapped", profile, BUILD_SLICE)
     for step in steps:
         logger.info("[%s] %s (cpus %d)", profile, " ".join(step), threads)
         started = time.monotonic()
         subprocess.run(
-            ["docker", "run", "--rm",
-             "--cpus", str(threads), "--oom-score-adj", "1000",
+            ["docker", "run", *run_opts,
              "-v", f"{DATA_DIR}:/data", image, *step],
             check=True,
         )
@@ -186,6 +218,8 @@ def main() -> None:
                         help="source .osm.pbf, local path or URL (default: whole-US Geofabrik)")
     parser.add_argument("--force-rebuild", action="store_true",
                         help="rebuild even if a profile is already built with this image")
+    parser.add_argument("--skip-extract", action="store_true",
+                        help="only run osrm-contract, on an existing extract in the profile dir")
     args = parser.parse_args()
 
     image = osrm_image()
@@ -197,7 +231,7 @@ def main() -> None:
             logger.info("[%s] up to date, skipping (use --force-rebuild to redo)", profile)
             continue
         try:
-            build_profile(profile, source, image)
+            build_profile(profile, source, image, args.skip_extract)
         except subprocess.CalledProcessError as e:
             sys.exit(f"[{profile}] build failed (exit {e.returncode}); see the log above")
 

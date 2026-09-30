@@ -1,0 +1,11 @@
+# Soft memory cap for OSRM graph builds (prep-osrm.py runs its build containers
+# here via `docker run --cgroup-parent osrm-build.slice`). Past MemoryHigh the
+# kernel reclaims the build's memory into swap instead of OOM-killing it, which
+# keeps ~8GB of RAM free for the rest of the host. Sized for cube (48GB RAM).
+#   sudo cp osrm-build.slice /etc/systemd/system/ && sudo systemctl daemon-reload
+[Unit]
+Description=OSRM graph builds (soft memory cap)
+
+[Slice]
+MemoryHigh=40G
+MemorySwapMax=infinity
