@@ -135,7 +135,7 @@ def fetch_source(source: str) -> Path:
 
     path = DATA_DIR / Path(source.split("?")[0]).name
     if not path.is_file():
-        logger.info("Downloading %s (this is large; ~11GB for whole-US)", source)
+        logger.info("Downloading %s (this is large: ~3-4GB for US West, ~11GB for whole-US)", source)
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".part")
         urlretrieve(source, tmp)
