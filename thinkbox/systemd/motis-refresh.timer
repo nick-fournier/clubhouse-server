@@ -1,0 +1,12 @@
+# Twice a month, 14-17 days apart. With the 30-day timetable window that keeps
+# at least a week of timetable ahead even if one run fails.
+[Unit]
+Description=Refresh MOTIS timetables twice a month
+
+[Timer]
+OnCalendar=*-*-01,15 03:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
