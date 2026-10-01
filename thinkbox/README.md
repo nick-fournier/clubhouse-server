@@ -14,6 +14,7 @@ than dataset size.
 ## Layout
 - `compose.yaml` — one stack serving both (MOTIS + `osrm-nginx` + one backend per profile).
 - `prep-motis.py` — builds `data/motis` (uv env from `pyproject.toml` / `uv.lock`).
+- `refresh-motis.sh` + `systemd/` — rebuilds MOTIS with fresh feeds twice a month.
 - `prep-osrm.py` — builds `data/osrm/<profile>` (stdlib only).
 - `osrm-nginx.conf` — routes `/route/v1/<profile>/...` to the matching OSRM backend.
 - `data/` — gitignored; `data/motis` and `data/osrm`.
@@ -113,6 +114,34 @@ comes from the uv-managed env.
 
 If you have no token, drop GTFS `.zip` files into `data/motis/gtfs/` manually and
 prep will use those.
+
+### Keeping timetables fresh
+The import covers a fixed window (`--num-days`, 30 by default), so MOTIS stops
+answering once it ends ("query time ... is outside of loaded timetable window").
+`refresh-motis.sh` rebuilds it with freshly downloaded feeds:
+
+1. Prepares `data/motis-next` from scratch while the current dataset keeps serving.
+   Every GTFS feed is downloaded new, because re-running prep in place reuses
+   cached zips: an unversioned feed would never update, and a versioned one would
+   be imported alongside its old copy. The OSM extract is reused unless it's over
+   90 days old.
+2. Stops MOTIS for `motis import` (~30+ min); the server and the import don't both
+   fit in 16GB.
+3. Swaps folders (`data/motis` becomes `data/motis-prev`), starts MOTIS and checks
+   that it plans a trip for tomorrow.
+
+If anything fails once MOTIS is stopped, the previous dataset goes back into
+service and the failed build stays in `data/motis-next`. The script exits non-zero,
+so the systemd unit shows as failed.
+
+`systemd/` runs it on the 1st and 15th at ~03:00:
+```bash
+sudo cp systemd/motis-refresh.* /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now motis-refresh.timer
+systemctl list-timers motis-refresh      # next run
+sudo systemctl start motis-refresh       # run now
+journalctl -u motis-refresh              # logs
+```
 
 ## Deploy
 ```bash

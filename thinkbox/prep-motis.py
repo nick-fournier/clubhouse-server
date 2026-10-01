@@ -31,6 +31,7 @@ Usage:
   uv run prep-motis.py                   # full pipeline (download + import)
   uv run prep-motis.py --download-only   # just fetch GTFS + OSM
   uv run prep-motis.py --prepare-only    # sanitize + config, skip the slow import
+  uv run prep-motis.py --import-only     # just the import, on a prepared config.yml
   uv run prep-motis.py --num-days 30     # timetable window (default 30)
   uv run prep-motis.py --date 2026-06-16 # override reference date (a Monday)
   uv run prep-motis.py --force-rebuild   # re-import even if a dataset exists
@@ -1033,6 +1034,9 @@ def main() -> None:
     parser.add_argument("--prepare-only", action="store_true",
                         help="Download + sanitize + write config, but skip `motis import` "
                              "(inspect staged feeds before the slow import)")
+    parser.add_argument("--import-only", action="store_true",
+                        help="Only run `motis import` on an already-prepared config.yml "
+                             "(the second half of --prepare-only)")
     parser.add_argument("--force-rebuild", action="store_true",
                         help="Re-import even if a dataset already exists")
     parser.add_argument("--force-download", action="store_true",
@@ -1043,6 +1047,12 @@ def main() -> None:
     parser.add_argument("--date", type=str, default=None,
                         help="Reference date YYYY-MM-DD (first_day = its Monday)")
     args = parser.parse_args()
+
+    if args.import_only:
+        if not (DATA_DIR / "config.yml").is_file():
+            raise SystemExit(f"No config.yml in {DATA_DIR}; run with --prepare-only first")
+        run_import(DATA_DIR)
+        return
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
