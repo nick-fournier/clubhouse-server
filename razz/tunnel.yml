@@ -20,4 +20,12 @@ ingress:
   - hostname: "portfolio.nicholasfournier.com"
     service: http://orange:8100
 
+  # Routing engines on thinkbox, reached over Tailscale. OSRM goes through
+  # osrm-nginx, which picks the car/bicycle/foot backend from the URL.
+  - hostname: "motis.nicholasfournier.com"
+    service: http://thinkbox:8080
+
+  - hostname: "osrm.nicholasfournier.com"
+    service: http://thinkbox:5000
+
   - service: http_status:404
