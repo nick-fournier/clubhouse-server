@@ -1,6 +1,7 @@
 # thinkbox — routing box (Lenovo M72e, x86 / 2.5G NIC)
 
-Runs both routing engines, reachable over Tailscale only (not public):
+Runs both routing engines, public through the Cloudflare tunnel on razz
+(`motis.nicholasfournier.com`, `osrm.nicholasfournier.com`) and on the mesh:
 - [MOTIS](https://github.com/motis-project/motis) on `:8080`: multimodal transit
   routing over **all of the US** (GTFS timetables + OpenStreetMap street/walk routing).
 - [OSRM](https://github.com/Project-OSRM/osrm-backend) on `:5000`: car / bicycle /
@@ -116,11 +117,12 @@ prep will use those.
 ## Deploy
 ```bash
 docker compose up -d
-curl "http://localhost:8080/"          # MOTIS health / UI
 curl "http://localhost:5000/route/v1/driving/-122.42,37.77;-122.41,37.78?overview=false"
 ```
 Reachable from other mesh boxes over Tailscale at `thinkbox:8080` (MOTIS) and
-`thinkbox:5000` (OSRM). Neither is exposed publicly.
+`thinkbox:5000` (OSRM), and publicly at `https://motis.nicholasfournier.com` and
+`https://osrm.nicholasfournier.com` via the tunnel on razz (`razz/tunnel.yml`).
+Neither has authentication, so keep a Cloudflare rate-limiting rule on both hostnames.
 
 ### RAM fallbacks
 If the full-US street import OOMs in practice:

@@ -26,8 +26,11 @@ hostname**. Each hostname also needs a proxied CNAME to the tunnel
 - `bvi.nicholasfournier.com` → razz `bvi` (image from `nick-fournier/bvi_itinerary`)
 - `portfolio.nicholasfournier.com` → `orange:8100` (portfolio lab dashboard, image from
   `nick-fournier/portfolio-lab`)
+- `motis.nicholasfournier.com` → `thinkbox:8080` (MOTIS transit routing)
+- `osrm.nicholasfournier.com` → `thinkbox:5000` (OSRM car/bike/foot routing)
 
-MOTIS and OSRM run on thinkbox and are reachable over Tailscale only (see `thinkbox/README.md`).
+MOTIS and OSRM run on thinkbox (see `thinkbox/README.md`); on the mesh they're also
+at `thinkbox:8080` and `thinkbox:5000`.
 
 Static sites stay on razz so they don't go down when a worker is busy or out of
 memory. Each app repo's CI pushes `nichfournier/<app>:latest`; deploy with
