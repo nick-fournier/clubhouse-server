@@ -5,7 +5,9 @@ name: orange
 #   portfolio-web   read-only dashboard, public at portfolio.nicholasfournier.com
 #                   (razz tunnel -> orange:8100 over Tailscale)
 #   portfolio-jobs  scheduler: daily ingest after 20:00 ET, weekly verify + baseline backtests
-# Data lives on the NVMe at /home/nick/portfolio-data, outside this repo.
+# Data lives on the NVMe at /home/nick/portfolio-data, outside this repo: free/ (free sources;
+# production runs on it), sharadar/ (licensed research history, delete to tear down) and
+# trading/ (paper account records: operational history, kept apart from market data).
 # Deploy: docker compose pull && docker compose up -d
 
 x-portfolio: &portfolio
@@ -14,6 +16,7 @@ x-portfolio: &portfolio
   restart: unless-stopped
   environment:
     - PORTFOLIO_DATA_DIR=/data
+    - PORTFOLIO_TRADING_DIR=/trading
 
 services:
   portfolio-web:
@@ -23,7 +26,8 @@ services:
     ports:
       - "8100:8100"
     volumes:
-      - /home/nick/portfolio-data:/data:ro
+      - /home/nick/portfolio-data/free:/data:ro
+      - /home/nick/portfolio-data/trading:/trading:ro
     mem_limit: 1g
 
   portfolio-jobs:
@@ -32,7 +36,8 @@ services:
     command: plab schedule
     env_file: .env  # Alpaca keys; see example.env
     volumes:
-      - /home/nick/portfolio-data:/data
+      - /home/nick/portfolio-data/free:/data
+      - /home/nick/portfolio-data/trading:/trading
     mem_limit: 10g
     cpus: 6
     healthcheck:
