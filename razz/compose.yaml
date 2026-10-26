@@ -9,7 +9,7 @@ name: razz
 services:
   # launchpad.nicholasfournier.com: index page + redirects for the old Django paths.
   home:
-    image: nginx:1.27-alpine
+    image: nginx:1.31-alpine
     container_name: home
     restart: unless-stopped
     mem_limit: 64m
@@ -38,7 +38,7 @@ services:
       - razz-network
 
   tunnel:
-    image: cloudflare/cloudflared:2026.9.3
+    image: cloudflare/cloudflared:2026.10.3
     container_name: tunnel
     restart: unless-stopped
     command: tunnel --no-autoupdate --config /app/config.yml run
