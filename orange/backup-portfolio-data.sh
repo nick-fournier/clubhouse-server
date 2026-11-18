@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Back up orange's portfolio-lab data root to cube's NAS (SMB share "bulk", mounted at /mnt/bulk).
 #
-#   /home/nick/portfolio-data/  ->  /mnt/bulk/restic/portfolio-data    dated restic snapshots
+#   /home/nick/portfolio-data/  ->  /mnt/bulk/portfolio-data/          a plain mirror (cubevm research reads it)
+#                               ->  /mnt/bulk/restic/portfolio-data    dated restic snapshots
 #
-# The snapshots keep history: 14 daily, 8 weekly and 12 monthly; each stores only what changed.
-# (A plain rsync mirror was dropped 2026-11-18: it copied deletions and damage the next night.)
+# The mirror follows orange: files deleted there are deleted here on the next run. The restic
+# snapshots keep history: 14 daily, 8 weekly and 12 monthly; each stores only what changed.
 # cache/ is left out of the snapshots (it rebuilds itself). On Sundays unused data is pruned
 # and the repository checked.
 #
 #   Restore:  RESTIC_REPOSITORY=/mnt/bulk/restic/portfolio-data RESTIC_PASSWORD=portfolio-data \
 #             restic restore latest --target /some/folder [--include /home/nick/portfolio-data/x]
-#   Browse:   the same variables, then  restic ls latest  (or  restic snapshots  for the dates)
 #
 # Refuses to run if the share isn't mounted, so it never fills orange's own disk instead.
 #
@@ -20,6 +20,7 @@ set -euo pipefail
 
 SOURCE=/home/nick/portfolio-data/
 MOUNT=/mnt/bulk
+TARGET=$MOUNT/portfolio-data/
 export RESTIC_REPOSITORY=$MOUNT/restic/portfolio-data
 # Not a secret (stock data and paper-trading records); restic 0.16 (Ubuntu's) needs one.
 export RESTIC_PASSWORD=portfolio-data
@@ -29,6 +30,13 @@ if ! mountpoint -q "$MOUNT"; then
     echo "$(date -Is) $MOUNT is not mounted; skipping backup" >&2
     exit 1
 fi
+
+mkdir -p "$TARGET"
+# SMB has no Unix owners or permissions: copy contents and file times only. --inplace: rsync's
+# temporary names (".<file>.XXXX") turn "_SUCCESS" into "._SUCCESS...", which the share refuses
+# (macOS metadata names); --omit-dir-times: the share doesn't keep folder times.
+rsync -rt --inplace --omit-dir-times --delete --modify-window=2 "$SOURCE" "$TARGET"
+echo "$(date -Is) mirrored $(du -sh "$SOURCE" | cut -f1) to $TARGET"
 
 restic cat config > /dev/null 2>&1 || restic init
 restic backup --quiet --exclude "${SOURCE}cache" "$SOURCE"
