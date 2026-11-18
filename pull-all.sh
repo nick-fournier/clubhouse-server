@@ -5,7 +5,7 @@
 #
 # Usage: ./pull-all.sh [host...]   (default: all hosts)
 
-for h in ${@:-razz4 orange thinkbox cubevm}; do
+for h in ${@:-razz4 orange thinkbox}; do  # cubevm: no checkout (GPU research only)
   echo "== $h"
   ssh -o ConnectTimeout=5 "$h" 'cd ~/clones/clubhouse-server 2>/dev/null || cd ~/clubhouse-server && pwd && git pull --ff-only'
 done
