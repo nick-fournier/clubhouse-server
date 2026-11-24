@@ -8,7 +8,7 @@ name: orange
 #   portfolio-private  the same site plus the account pages, for one Tailscale login only:
 #                   listens on orange's loopback alone (127.0.0.1:8101), reached through
 #                   `tailscale serve --bg 8101` at https://<orange's tailnet name>; never in the
-#                   razz tunnel
+#                   razz tunnel; writes only trading/settings (the reserve)
 #   portfolio-jobs  scheduler, New York time: a daily chain on trading days at 8 pm (ingest,
 #                   hive, forecasts, paper account) and a weekly chain Saturdays at 6 am (EDGAR,
 #                   FRED, delisted stocks, price spot check, then the weekly backtests)
@@ -52,6 +52,12 @@ services:
     volumes:
       - /home/nick/portfolio-data:/data:ro
       - /home/nick/portfolio-data/trading:/trading:ro
+      # the one folder it writes: settings made on its pages (the reserve), read by the jobs
+      - type: bind
+        source: /home/nick/portfolio-data/trading/settings
+        target: /trading/settings
+        bind:
+          create_host_path: false  # make it as nick first: Docker would make it root's
     mem_limit: 1g
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/healthz')"]
