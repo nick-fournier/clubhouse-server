@@ -1,9 +1,14 @@
 name: orange
 
 # Compute worker (Orange Pi 5, RK3588). Runs the portfolio lab
-# (github.com/nick-fournier/portfolio-lab): one image, two services.
+# (github.com/nick-fournier/portfolio-lab): one image, three services.
 #   portfolio-web   read-only dashboard, public at portfolio.nicholasfournier.com
-#                   (razz tunnel -> orange:8100 over Tailscale)
+#                   (razz tunnel -> orange:8100 over Tailscale); no account pages, and the
+#                   account records (trading/) hidden from it
+#   portfolio-private  the same site plus the account pages, for one Tailscale login only:
+#                   listens on orange's loopback alone (127.0.0.1:8101), reached through
+#                   `tailscale serve --bg 8101` at https://<orange's tailnet name>; never in the
+#                   razz tunnel
 #   portfolio-jobs  scheduler, New York time: a daily chain on trading days at 8 pm (ingest,
 #                   hive, forecasts, paper account) and a weekly chain Saturdays at 6 am (EDGAR,
 #                   FRED, delisted stocks, price spot check, then the weekly backtests)
@@ -24,12 +29,34 @@ services:
     <<: *portfolio
     container_name: portfolio-web
     command: plab serve --host 0.0.0.0 --port 8100
+    environment:
+      - PORTFOLIO_DATA_DIR=/data
     ports:
       - "8100:8100"
     volumes:
       - /home/nick/portfolio-data:/data:ro
+    tmpfs:
+      - /data/trading:size=1m  # an empty folder over the account records: the public site can't read them
+    mem_limit: 1g
+
+  portfolio-private:
+    <<: *portfolio
+    container_name: portfolio-private
+    command: plab serve --host 127.0.0.1 --port 8101
+    network_mode: host  # listens on orange's loopback only: no published port, nothing on the LAN
+    environment:
+      - PORTFOLIO_DATA_DIR=/data
+      - PORTFOLIO_TRADING_DIR=/trading
+      # the one Tailscale login let in; set in .env (this repo is public)
+      - PORTFOLIO_PRIVATE_USER=${PORTFOLIO_PRIVATE_USER:?set PORTFOLIO_PRIVATE_USER in .env}
+    volumes:
+      - /home/nick/portfolio-data:/data:ro
       - /home/nick/portfolio-data/trading:/trading:ro
     mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/healthz')"]
+      interval: 60s
+      timeout: 5s
 
   portfolio-jobs:
     <<: *portfolio
