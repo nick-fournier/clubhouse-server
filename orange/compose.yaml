@@ -8,9 +8,11 @@ name: orange
 #   portfolio-private  the same site plus the account pages, for one Tailscale login only:
 #                   listens on orange's loopback alone (127.0.0.1:8101), reached through
 #                   `tailscale serve --bg 8101` at https://<orange's tailnet name>; never in the
-#                   razz tunnel; writes only trading/settings (the reserve)
+#                   razz tunnel; writes only trading/settings (the reserve, the trading
+#                   switch, the Schwab login's token: its /schwab/callback is the Schwab
+#                   app's callback URL, so it needs the app's key and secret)
 #   portfolio-jobs  scheduler, New York time: a daily chain on trading days at 8 pm (ingest,
-#                   hive, forecasts, paper account) and a weekly chain Saturdays at 6 am (EDGAR,
+#                   hive, forecasts, the accounts) and a weekly chain Saturdays at 6 am (EDGAR,
 #                   FRED, delisted stocks, price spot check, then the weekly backtests)
 # Data lives on the NVMe at /home/nick/portfolio-data, outside this repo: one folder per source
 # (alpaca/, sharadar/, edgar/, ...), the derived tables and results; trading/ holds the paper
@@ -49,6 +51,10 @@ services:
       - PORTFOLIO_TRADING_DIR=/trading
       # the one Tailscale login let in; set in .env (this repo is public)
       - PORTFOLIO_PRIVATE_USER=${PORTFOLIO_PRIVATE_USER:?set PORTFOLIO_PRIVATE_USER in .env}
+      # the Schwab app, for the login page; the Alpaca keys stay out of this container
+      - SCHWAB_CLIENT_ID=${SCHWAB_CLIENT_ID:-}
+      - SCHWAB_CLIENT_SECRET=${SCHWAB_CLIENT_SECRET:-}
+      - SCHWAB_CALLBACK_URL=${SCHWAB_CALLBACK_URL:-}
     volumes:
       - /home/nick/portfolio-data:/data:ro
       - /home/nick/portfolio-data/trading:/trading:ro
@@ -68,7 +74,7 @@ services:
     <<: *portfolio
     container_name: portfolio-jobs
     command: plab schedule
-    env_file: .env  # Alpaca keys; see example.env
+    env_file: .env  # Alpaca and Schwab keys; see example.env
     volumes:
       - /home/nick/portfolio-data:/data
       - /home/nick/portfolio-data/trading:/trading
